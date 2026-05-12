@@ -40,8 +40,10 @@ class KnowledgeBase(Protocol):
     backend: str
     def reset(self) -> None: ...
     def set_agent_pos(self, pos: Position) -> None: ...
+    def set_agent_energy(self, energy: int) -> None: ...
     def update_perception(self, pos: Position, percepts: list[str]) -> None: ...
     def mark_gold_taken(self, pos: Position) -> None: ...
+    def mark_powerup_taken(self, pos: Position) -> None: ...
     def likely_safe(self, pos: Position) -> bool: ...
     def is_visited(self, pos: Position) -> bool: ...
     def is_known_gold(self, pos: Position) -> bool: ...
@@ -122,6 +124,9 @@ class SwiPrologKB:
     def set_agent_pos(self, pos: Position) -> None:
         self._do(f"set_agent_pos({_pos(pos)})")
 
+    def set_agent_energy(self, energy: int) -> None:
+        self._do(f"set_agent_energy({energy})")
+
     def update_perception(self, pos: Position, percepts: list[str]) -> None:
         plist = "[" + ",".join(percepts) + "]"
         self._do(f"update_perception({_pos(pos)}, {plist})")
@@ -129,6 +134,9 @@ class SwiPrologKB:
     def mark_gold_taken(self, pos: Position) -> None:
         self._do(f"mark_gold_taken({_pos(pos)})")
         self._do("inc_gold")
+
+    def mark_powerup_taken(self, pos: Position) -> None:
+        self._do(f"mark_powerup_taken({_pos(pos)})")
 
     def likely_safe(self, pos: Position) -> bool:
         return self._do(f"likely_safe({_pos(pos)})")
@@ -180,6 +188,7 @@ class SwiPrologKB:
                 _parse_pos(p) for p in self._query("risky_frontier(P)", "P")
             ],
             "gold_seen": [_parse_pos(p) for p in self._query("gold_seen(P)", "P")],
+            "powerup_seen": [_parse_pos(p) for p in self._query("powerup_seen(P)", "P")],
             "gold_carried": _parse_int(self._query("gold_carried(N)", "N")),
         }
 

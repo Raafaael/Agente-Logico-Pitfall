@@ -143,6 +143,7 @@ class Percept:
     breeze: bool = False    # adjacente a poco (brisa)
     flash: bool = False     # adjacente a teletransporte (flash)
     glow: bool = False      # ouro na sala atual (brilho)
+    powerup: bool = False   # powerup na sala atual (reflexo)
     impact: bool = False    # andou contra a parede
     scream: bool = False    # reserved for future enemy-combat extensions
 

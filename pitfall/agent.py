@@ -75,6 +75,7 @@ class Agent:
         self.state.last_percept = percept
 
         self.kb.set_agent_pos(pos)
+        self.kb.set_agent_energy(energy)
         active = percept.as_list()
         self.kb.update_perception(pos, active)
 
@@ -86,14 +87,18 @@ class Agent:
         if kind == "gold":
             self.state.gold_carried += 1
             self.kb.mark_gold_taken(self.state.pos)
+        elif kind == "powerup":
+            self.kb.mark_powerup_taken(self.state.pos)
 
     def decide_action(self) -> Action:
         if self.state.pending:
             return self.state.pending.popleft()
 
+        # Retornar ao inicio quando: todos os ouros coletados, OU energia critica.
+        # Energia baixa (mas nao critica) e' gerenciada pela KB via energia_baixa:
+        # a KB busca powerups proximos antes de decidir retornar.
         should_return = (
             self.state.gold_carried >= GOLD_TARGET
-            or (self.state.gold_carried > 0 and self.state.energy <= LOW_ENERGY_RETURN)
             or self.state.energy <= CRITICAL_ENERGY_RETURN
         )
         if should_return:

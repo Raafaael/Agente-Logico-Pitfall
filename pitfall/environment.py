@@ -78,11 +78,13 @@ class Environment:
             if nc == CellType.TELEPORTER:
                 flash = True
         glow = cell == CellType.GOLD
+        powerup = cell == CellType.POWERUP
         return Percept(
             steps=steps,
             breeze=breeze,
             flash=flash,
             glow=glow,
+            powerup=powerup,
             impact=self._last_impact,
             scream=self._last_scream,
         )
@@ -219,14 +221,6 @@ class Environment:
             result["message"] = (
                 f"teleportado para {new_pos}; {inner['message']}".strip("; ")
             )
-            return result
-
-        if cell == CellType.POWERUP:
-            set_cell(self._grid, pos, CellType.EMPTY)
-            self.powerups_taken += 1
-            result["energy"] += POWERUP_ENERGY_GAIN
-            result["picked"] = "powerup"
-            result["message"] = f"powerup coletado (+{POWERUP_ENERGY_GAIN} energia)"
             return result
 
         result["message"] = "sala vazia"
