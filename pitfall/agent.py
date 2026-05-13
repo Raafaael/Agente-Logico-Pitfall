@@ -91,8 +91,20 @@ class Agent:
             self.kb.mark_powerup_taken(self.state.pos)
 
     def decide_action(self) -> Action:
+        action = self._decide()
+        self.state.last_action = action
+        return action
+
+    def _decide(self) -> Action:
         if self.state.pending:
             return self.state.pending.popleft()
+
+        # Guard: se o ultimo WALK bateu em parede, girar para replanjar
+        # (o planejador A* nunca deveria gerar isso, mas cobre casos extremos)
+        if (self.state.last_percept is not None
+                and self.state.last_percept.impact
+                and self.state.last_action == Action.WALK):
+            return Action.TURN_RIGHT
 
         # Retornar ao inicio quando: todos os ouros coletados, OU energia critica.
         # Energia baixa (mas nao critica) e' gerenciada pela KB via energia_baixa:

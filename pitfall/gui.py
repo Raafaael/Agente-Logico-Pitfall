@@ -372,10 +372,10 @@ class PitfallGUI:
         if result.picked:
             self.agent.notify_picked(result.picked)
 
-        if self.env.alive and not self.env.escaped:
-            self._observe_current()
-        else:
-            self.last_percepts = str(result.percept)
+        # Atualiza apenas a string de percepcao para display; o observe() completo
+        # e' feito no inicio do proximo _step_once (igual ao CLI), evitando apagar
+        # o pending mid-turno e mantendo o timing identico entre GUI e CLI.
+        self.last_percepts = str(result.percept)
 
         self.last_action = action.value
         self.last_picked = result.picked or "-"

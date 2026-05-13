@@ -213,17 +213,19 @@ risk_score(Pos, Score) :-
 % =====================================================================
 % Tomada de decisao - decide/1  (equivalente a executa_acao de main.pl)
 %
+% O agente NUNCA retorna para a saida com ouro parcial por energia baixa
+% (fiel ao main.pl). O retorno forçado por energia critica e' responsabilidade
+% do lado Python (CRITICAL_ENERGY_RETURN=25 em agent.py).
+%
 % Prioridade:
 %   1. pegar ouro no local
 %   2. pegar powerup no local quando energia baixa  (energia_baixa)
 %   3. sair com todos os ouros na saida
 %   4. mover para ouro seguro conhecido
 %   5. mover para powerup mais proximo quando energia baixa  (energia_baixa)
-%   6. voltar para saida quando energia baixa e sem powerup (energia_baixa)
-%   7. explorar fronteira segura nao visitada
-%   8. arriscar fronteira de menor risco
-%   9. voltar para saida (fallback)
-%  10. sair
+%   6. explorar fronteira segura nao visitada
+%   7. arriscar fronteira de menor risco
+%   8. voltar para saida (fallback — sem mais o que explorar)
 % =====================================================================
 
 % 1. Ouro no local: coletar sempre
@@ -270,24 +272,14 @@ decide(mover(Target)) :-
     Cands \= [],
     keysort(Cands, [_-Target|_]), !.
 
-% 6. energia_baixa: sem powerup disponivel e com ouro -> voltar para saida
-decide(mover(Exit)) :-
-    agent_energy(E),
-    energy_low_threshold(T),
-    E =< T,
-    gold_carried(N), N > 0,
-    exit_pos(Exit),
-    agent_pos(Pos),
-    Pos \= Exit, !.
-
-% 7. Explorar fronteira segura nao visitada (mais proxima primeiro)
+% 6. Explorar fronteira segura nao visitada (mais proxima primeiro)
 decide(mover(Target)) :-
     agent_pos(Pos),
     findall(D-T, (unvisited_safe_frontier(T), manhattan(Pos, T, D)), Cands),
     Cands \= [],
     keysort(Cands, [_-Target|_]), !.
 
-% 8. Arriscar fronteira de menor risco quando nao ha opcao segura
+% 7. Arriscar fronteira de menor risco quando nao ha opcao segura
 decide(mover(Target)) :-
     agent_pos(Pos),
     findall(Score-D-T,
@@ -300,7 +292,7 @@ decide(mover(Target)) :-
     Sorted \= [],
     Sorted = [_-_-Target|_], !.
 
-% 9. Voltar para saida se nao houver nada mais a explorar
+% 8. Voltar para saida se nao houver nada mais a explorar
 decide(mover(Exit)) :-
     exit_pos(Exit),
     agent_pos(Pos),

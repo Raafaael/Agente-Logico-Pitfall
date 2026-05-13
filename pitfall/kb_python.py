@@ -217,16 +217,18 @@ class PythonKB:
     def decide(self) -> tuple[str, Optional[Position]]:
         """Espelho das regras decide/1 de knowledge_base.pl.
 
+        O agente nunca retorna com ouro parcial por energia baixa (fiel ao main.pl).
+        O retorno forcado fica por conta de agent.py (CRITICAL_ENERGY_RETURN=25).
+
         Prioridade:
           1. pegar ouro no local
           2. pegar powerup no local quando energia baixa
           3. sair com todos os ouros na saida
           4. mover para ouro seguro conhecido
-          5. mover para powerup mais proximo quando energia baixa  (energia_baixa)
-          6. voltar para saida quando energia baixa e sem powerup  (energia_baixa)
-          7. explorar fronteira segura
-          8. arriscar fronteira de menor risco
-          9. voltar para saida (fallback)
+          5. mover para powerup mais proximo quando energia baixa (energia_baixa)
+          6. explorar fronteira segura
+          7. arriscar fronteira de menor risco
+          8. voltar para saida (fallback — sem mais o que explorar)
         """
         pos = self.agent_pos
 
@@ -258,18 +260,14 @@ class PythonKB:
                              key=lambda p: abs(p[0]-pos[0]) + abs(p[1]-pos[1]))
                 return "mover", target
 
-            # 6. energia_baixa: sem powerup, com ouro -> voltar para saida
-            if self.gold_carried > 0 and pos != self.exit_pos:
-                return "mover", self.exit_pos
-
-        # 7. Explorar fronteira segura
+        # 6. Explorar fronteira segura
         frontier = self.safe_unvisited_frontier()
         if frontier:
             target = min(frontier,
                          key=lambda p: abs(p[0]-pos[0]) + abs(p[1]-pos[1]))
             return "mover", target
 
-        # 8. Arriscar fronteira de menor risco
+        # 7. Arriscar fronteira de menor risco
         risky = self.risky_frontier()
         if risky:
             target = min(risky,
@@ -277,7 +275,7 @@ class PythonKB:
                                         abs(p[0]-pos[0]) + abs(p[1]-pos[1])))
             return "mover", target
 
-        # 9. Fallback: voltar para saida
+        # 8. Fallback: voltar para saida (sem mais o que explorar)
         if pos != self.exit_pos:
             return "mover", self.exit_pos
 
