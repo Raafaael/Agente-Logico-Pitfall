@@ -11,6 +11,7 @@ from tkinter import filedialog, messagebox, ttk
 from .agent import Agent
 from .environment import Environment
 from .map_loader import Grid, count_elements, generate_random_map, load_map_from_file
+from .prolog_bridge import PrologUnavailable
 from .types import Action, CellType, Direction, INITIAL_ENERGY, START_POS
 
 
@@ -274,14 +275,13 @@ class PitfallGUI:
                     start=start,
                     initial_direction=direction,
                 )
-            except Exception as exc:
+            except (PrologUnavailable, FileNotFoundError) as exc:
                 if self.backend_var.get() == "prolog":
-                    messagebox.showwarning(
-                        "SWI-Prolog indisponivel",
-                        f"Nao foi possivel iniciar o Prolog:\n{exc}\n\nUsando Python.",
-                    )
                     self.backend_var.set("python")
                     agent = Agent(kb_backend="python", start=start, initial_direction=direction)
+                    self._append_log(
+                        f"SWI-Prolog indisponivel ({exc}); jogo iniciado com backend Python."
+                    )
                 else:
                     raise
         except Exception as exc:

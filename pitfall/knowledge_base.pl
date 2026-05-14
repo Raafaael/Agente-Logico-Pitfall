@@ -74,9 +74,14 @@ percept_obs(flash,  palmas).
 % update_perception(+Pos, +Percepts)
 % Percepts e' lista de atomos Python: [breeze, steps, flash, glow, powerup, ...]
 update_perception(Pos, Percepts) :-
-    % Celula atual: visitada, com certeza e segura
+    % Celula atual: visitada, com certeza e segura.
+    % Limpa quaisquer inferencias de perigo sobre esta celula — o agente
+    % sobreviveu aqui, entao nao pode ser poco, inimigo ou teletransporte.
     assert_unique(visited(Pos)),
     assert_unique(certeza(Pos)),
+    retractall(confirmed_pit(Pos)),
+    retractall(confirmed_enemy(Pos)),
+    retractall(confirmed_teleport(Pos)),
     retractall(memory(Pos, _)),
     assertz(memory(Pos, [])),
     % Registrar sinais de perigo percebidos nesta celula (para inferencia)

@@ -104,7 +104,7 @@ class Environment:
         self._last_impact = False
         self._last_scream = False
         score_delta = ACTION_COST
-        energy_delta = 0
+        energy_delta = ACTION_COST
         teleported = False
         picked: Optional[str] = None
         message = ""
@@ -152,6 +152,8 @@ class Environment:
         elif action == Action.EXIT:
             if self.agent_pos == self.start_pos:
                 self.escaped = True
+                score_delta = 0   # sair com sucesso nao custa energia nem pontos
+                energy_delta = 0
                 message = "saiu do labirinto"
             else:
                 message = "fora da saida; nada acontece"

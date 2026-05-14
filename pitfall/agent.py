@@ -9,11 +9,9 @@ from .planner import astar, path_to_actions
 from .prolog_bridge import KnowledgeBase, make_kb
 from .types import (
     Action,
-    CRITICAL_ENERGY_RETURN,
     Direction,
     GOLD_TARGET,
     GRID_SIZE,
-    LOW_ENERGY_RETURN,
     Percept,
     Position,
     START_POS,
@@ -32,6 +30,7 @@ class AgentState:
     last_decision: Optional[tuple[str, Optional[Position]]] = None
     last_message: str = ""
     pending: deque[Action] = field(default_factory=deque)
+    returning_to_exit: bool = False  # True: comprometido com retorno ate a saida
 
 
 class Agent:
@@ -106,22 +105,49 @@ class Agent:
                 and self.state.last_action == Action.WALK):
             return Action.TURN_RIGHT
 
-        # Retornar ao inicio quando: todos os ouros coletados, OU energia critica.
-        # Energia baixa (mas nao critica) e' gerenciada pela KB via energia_baixa:
-        # a KB busca powerups proximos antes de decidir retornar.
-        should_return = (
-            self.state.gold_carried >= GOLD_TARGET
-            or self.state.energy <= CRITICAL_ENERGY_RETURN
-        )
-        if should_return:
+        # Ativar retorno quando coletou todos os ouros
+        if self.state.gold_carried >= GOLD_TARGET:
+            self.state.returning_to_exit = True
+
+        # ----------------------------------------------------------------
+        # Modo retorno: uma vez comprometido, segue ate a saida sem oscilar.
+        # ----------------------------------------------------------------
+        if self.state.returning_to_exit:
             if self.state.pos == self.exit_pos:
-                self.state.last_decision = ("sair", None)
+                if self.state.gold_carried >= GOLD_TARGET:
+                    self.state.returning_to_exit = False
+                    self.state.last_decision = ("sair", None)
+                    return Action.EXIT
+                # Ouro parcial na saida: retoma exploracao so se tiver energia
+                if self.state.energy > self._MIN_ENERGY_REEXPLORE:
+                    self.state.returning_to_exit = False
+                    # cai no fluxo normal abaixo
+                else:
+                    self.state.last_decision = ("sair_energia", None)
+                    return Action.EXIT
+            else:
+                action = self._move_toward(self.exit_pos)
+                if action is not None:
+                    self.state.last_decision = ("retornar", self.exit_pos)
+                    return action
+                self.state.returning_to_exit = False  # sem caminho, tenta KB
+
+        # ----------------------------------------------------------------
+        # Verificacao proativa: ativa retorno antes de nao ter energia suficiente.
+        # Flag permanece True ate chegar na saida (sem oscilacao).
+        # ----------------------------------------------------------------
+        if not self.state.returning_to_exit and not self._enough_energy_to_return():
+            self.state.returning_to_exit = True
+            self.state.last_decision = ("retornar_energia", self.exit_pos)
+            if self.state.pos == self.exit_pos:
                 return Action.EXIT
             action = self._move_toward(self.exit_pos)
             if action is not None:
-                self.state.last_decision = ("mover", self.exit_pos)
                 return action
 
+        # ----------------------------------------------------------------
+        # Decisao normal via KB
+        # ----------------------------------------------------------------
         kind, target = self.kb.decide()
         self.state.last_decision = (kind, target)
 
@@ -155,6 +181,28 @@ class Agent:
         if path is None:
             return []
         return path_to_actions(path, self.state.direction)
+
+    # Energia minima na saida para valer a pena retomar exploracao.
+    _MIN_ENERGY_REEXPLORE: int = 20
+
+    def _enough_energy_to_return(self) -> bool:
+        """True se ha energia para pelo menos 1 passo de exploracao E o retorno completo.
+
+        Usa o caminho real via A*. Margem de 5 passos absorve desvios de rota.
+        Ao chegar na saida, retorna True (agent.pos == exit_pos e' tratado antes).
+        """
+        if self.state.pos == self.exit_pos:
+            return True
+        path = self._plan_path(self.exit_pos)
+        if path:
+            steps_home = len(path)
+        else:
+            r1, c1 = self.state.pos
+            r2, c2 = self.exit_pos
+            steps_home = (abs(r1 - r2) + abs(c1 - c2)) * 2 + 5
+        # energy > steps_home + 5 garante 1 passo de exploracao (+1) e
+        # chega na saida com energia >= 1 apos o retorno (+4 de folga)
+        return self.state.energy > steps_home + 5
 
     def _fallback_action(self, target: Position) -> Optional[Action]:
         from .types import orthogonal_neighbors
