@@ -111,6 +111,8 @@ class Agent:
 
         # ----------------------------------------------------------------
         # Modo retorno: uma vez comprometido, segue ate a saida sem oscilar.
+        # Durante o retorno verifica desvios viaveis para aproveitar energia
+        # restante (celulas seguras nao visitadas no caminho de volta).
         # ----------------------------------------------------------------
         if self.state.returning_to_exit:
             if self.state.pos == self.exit_pos:
@@ -118,14 +120,24 @@ class Agent:
                     self.state.returning_to_exit = False
                     self.state.last_decision = ("sair", None)
                     return Action.EXIT
-                # Ouro parcial na saida: retoma exploracao so se tiver energia
-                if self.state.energy > self._MIN_ENERGY_REEXPLORE:
-                    self.state.returning_to_exit = False
-                    # cai no fluxo normal abaixo
-                else:
-                    self.state.last_decision = ("sair_energia", None)
-                    return Action.EXIT
+                # Ouro parcial: tentar desvio acessivel antes de sair
+                detour = self._best_return_detour()
+                if detour is not None:
+                    # Permanece em modo retorno — desvio no caminho de volta
+                    action = self._move_toward(detour)
+                    if action is not None:
+                        self.state.last_decision = ("desvio_retorno", detour)
+                        return action
+                self.state.last_decision = ("sair_energia", None)
+                return Action.EXIT
             else:
+                # Fora da saida: verificar desvio antes de ir diretamente
+                detour = self._best_return_detour()
+                if detour is not None:
+                    action = self._move_toward(detour)
+                    if action is not None:
+                        self.state.last_decision = ("desvio_retorno", detour)
+                        return action
                 action = self._move_toward(self.exit_pos)
                 if action is not None:
                     self.state.last_decision = ("retornar", self.exit_pos)
@@ -182,14 +194,15 @@ class Agent:
             return []
         return path_to_actions(path, self.state.direction)
 
-    # Energia minima na saida para valer a pena retomar exploracao.
-    _MIN_ENERGY_REEXPLORE: int = 20
-
     def _enough_energy_to_return(self) -> bool:
         """True se ha energia para pelo menos 1 passo de exploracao E o retorno completo.
 
-        Usa o caminho real via A*. Margem de 5 passos absorve desvios de rota.
-        Ao chegar na saida, retorna True (agent.pos == exit_pos e' tratado antes).
+        Buffer de +6: aciona retorno quando energy <= sth + 6.
+        - +5 absorve saltos bruscos do A* (pode crescer ate +3 por passo)
+        - +1 extra garante que ao chegar na saida sobra energia para desvios
+          de 1 passo (custo ~5) via _best_return_detour.
+        Com energia menor que buffer+1 ao chegar seria possivel fazer o desvio
+        mas nao garantido; o +1 elimina esse risco.
         """
         if self.state.pos == self.exit_pos:
             return True
@@ -200,9 +213,49 @@ class Agent:
             r1, c1 = self.state.pos
             r2, c2 = self.exit_pos
             steps_home = (abs(r1 - r2) + abs(c1 - c2)) * 2 + 5
-        # energy > steps_home + 5 garante 1 passo de exploracao (+1) e
-        # chega na saida com energia >= 1 apos o retorno (+4 de folga)
-        return self.state.energy > steps_home + 5
+        return self.state.energy > steps_home + 6
+
+    def _best_return_detour(self) -> Optional[Position]:
+        """Encontra a celula segura nao visitada mais proxima que pode ser visitada
+        enquanto retorna, sem comprometer a chegada na saida com energia >= 1.
+
+        Estimativa conservadora do retorno: walks_home * 2 + 1
+        (pior caso: 1 giro por caminhada + 1 alinhamento inicial).
+        Condicao: energy > steps_to_cell + est_return  (chega na saida com >= 1 de energia).
+        """
+        from .planner import astar
+
+        frontier = self.kb.safe_unvisited_frontier()
+        if not frontier:
+            return None
+
+        def walkable(p: Position) -> bool:
+            return self.kb.likely_safe(p)
+
+        best: Optional[Position] = None
+        best_total = self.state.energy  # so aceita se total < energy (strict)
+
+        for cell in frontier:
+            path_there = self._plan_path(cell)
+            if not path_there:
+                continue
+            steps_to_cell = len(path_there)
+
+            path_home = astar(cell, self.exit_pos, walkable, size=self.size)
+            if path_home is None:
+                continue
+            walks_home = max(0, len(path_home) - 1)
+            # Pior caso: walks_home caminhadas + walks_home giros + 1 alinhamento
+            # Pior caso real: walks_home caminhadas + (walks_home + 1) giros
+            est_return = walks_home * 2 + 1
+
+            total = steps_to_cell + est_return
+            # Acessivel se sobra pelo menos 1 de energia ao chegar na saida
+            if self.state.energy > total and total < best_total:
+                best_total = total
+                best = cell
+
+        return best
 
     def _fallback_action(self, target: Position) -> Optional[Action]:
         from .types import orthogonal_neighbors

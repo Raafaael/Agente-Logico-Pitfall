@@ -200,10 +200,12 @@ risky_frontier(Pos) :-
     \+ confirmed_pit(Pos),
     valid_pos(Pos).
 
-% Predicados derivados para compatibilidade com snapshot do bridge
-risk_pit(Pos)       :- \+ certeza(Pos), memory(Pos, Obs), member(brisa, Obs).
-risk_enemy(Pos)     :- \+ certeza(Pos), memory(Pos, Obs), member(passos, Obs).
-risk_teleport(Pos)  :- \+ certeza(Pos), memory(Pos, Obs), member(palmas, Obs).
+% Predicados derivados para snapshot do bridge.
+% memory/2 DEVE vir antes de \+certeza para instanciar Pos antes do teste negativo.
+% Com Pos nao-instanciado, \+certeza(Pos) falharia sempre (unifica com qualquer fato).
+risk_pit(Pos)       :- memory(Pos, Obs), \+ certeza(Pos), member(brisa,  Obs).
+risk_enemy(Pos)     :- memory(Pos, Obs), \+ certeza(Pos), member(passos, Obs).
+risk_teleport(Pos)  :- memory(Pos, Obs), \+ certeza(Pos), member(palmas, Obs).
 
 risk_score(Pos, 10000) :- confirmed_pit(Pos), !.
 risk_score(Pos, Score) :-
