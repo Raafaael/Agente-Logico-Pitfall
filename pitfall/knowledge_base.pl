@@ -30,13 +30,17 @@
 :- dynamic steps_at/1.
 :- dynamic flash_at/1.
 :- dynamic gold_seen/1.
+:- dynamic powerup_seen/1.
 :- dynamic agent_pos/1.
 :- dynamic agent_dir/1.
+:- dynamic agent_energy/1.
 :- dynamic gold_carried/1.
 :- dynamic exit_pos/1.
 
 grid_size(12).
 target_gold(3).
+low_energy_threshold(50).
+critical_energy_threshold(25).
 
 valid_pos(R/C) :-
     grid_size(N),
@@ -92,6 +96,11 @@ update_perception(Pos, Percepts) :-
     retractall(risk_pit(Pos)),
     retractall(risk_enemy(Pos)),
     retractall(risk_teleport(Pos)),
+    % Standing here proves the cell is not a pit and not a teleporter
+    % (we did not get yanked away). It could still be an enemy cell --
+    % keep ``confirmed_enemy`` so we avoid retransiting it for free.
+    retractall(confirmed_pit(Pos)),
+    retractall(confirmed_teleport(Pos)),
     neighbors_of(Pos, Ns),
     handle_percept(breeze, Percepts, breeze_at,
                    risk_pit, pit_clear, confirmed_pit, Ns),
@@ -118,6 +127,15 @@ remember_signal(StorePred, Present) :-
     ( Present == true -> assert_unique(Goal) ; retractall(Goal) ).
 
 mark_gold_taken(Pos) :- retractall(gold_seen(Pos)).
+
+note_powerup_at(Pos) :- assert_unique(powerup_seen(Pos)).
+note_powerup_taken(Pos) :- retractall(powerup_seen(Pos)).
+
+% Energy dropped on a walk into Pos -> the cell hosts an enemy.
+note_enemy_here(Pos) :-
+    assert_unique(confirmed_enemy(Pos)),
+    retractall(enemy_clear(Pos)),
+    retractall(risk_enemy(Pos)).
 
 infer_confirmed_hazards :- infer_one_hazard, !, infer_confirmed_hazards.
 infer_confirmed_hazards.
@@ -175,10 +193,39 @@ likely_safe(Pos) :-
     ; (pit_clear(Pos), enemy_clear(Pos), tele_clear(Pos))
     ).
 
+% Looser than ``likely_safe``: visited cells can be retraversed even if they
+% turn out to be enemy rooms. Used for retreating home through hostile turf.
+walkable_for_path(Pos) :- valid_pos(Pos), visited(Pos), !.
+walkable_for_path(Pos) :- likely_safe(Pos).
+
 unvisited_safe_frontier(Pos) :-
     valid_pos(Pos),
     likely_safe(Pos),
     \+ visited(Pos).
+
+% A safe frontier cell only counts if there is a strictly-safe path to it
+% from the agent. Otherwise the agent would have to slip through a hostile
+% corridor just to "explore", which is rarely worth the damage.
+reachable_safe_frontier(Pos) :-
+    unvisited_safe_frontier(Pos),
+    safe_reachable(Pos).
+
+safe_reachable(Pos) :-
+    agent_pos(Start),
+    bfs_safe([Start], [Start], Pos).
+
+bfs_safe(Queue, _, Goal) :- member(Goal, Queue), !.
+bfs_safe(Queue, Visited, Goal) :-
+    findall(N,
+            ( member(P, Queue),
+              adjacent(P, N),
+              \+ member(N, Visited),
+              likely_safe(N) ),
+            NextRaw),
+    list_to_set(NextRaw, Next),
+    Next \= [],
+    append(Visited, Next, Visited1),
+    bfs_safe(Next, Visited1, Goal).
 
 risky(Pos) :-
     \+ confirmed_safe(Pos),
@@ -229,10 +276,20 @@ source_count(Pos, SensePred, Count) :-
 % O lado Python aplica A* pelas celulas seguras conhecidas para chegar la.
 % ---------------------------------------------------------------------
 
+% 1) Standing on gold -> grab it.
 decide(pegar) :-
     agent_pos(Pos),
     gold_seen(Pos), !.
 
+% 2) Standing on a known powerup while low on energy -> grab it.
+decide(pegar) :-
+    agent_pos(Pos),
+    powerup_seen(Pos),
+    agent_energy(E),
+    low_energy_threshold(Low),
+    E =< Low, !.
+
+% 3) At the exit with all gold -> escape.
 decide(sair) :-
     agent_pos(Pos),
     exit_pos(Pos),
@@ -240,18 +297,67 @@ decide(sair) :-
     target_gold(T),
     N >= T, !.
 
+% 4) Known gold reachable through safe cells -> go grab it.
 decide(mover(Target)) :-
     agent_pos(Pos),
     gold_seen(Target),
     Target \= Pos,
-    likely_safe(Target), !.
+    likely_safe(Target),
+    safe_reachable(Target), !.
 
+% 5) Energy low + known reachable powerup -> stock up before exploring more.
 decide(mover(Target)) :-
     agent_pos(Pos),
-    findall(D-T, (unvisited_safe_frontier(T), manhattan(Pos, T, D)), Cands),
+    agent_energy(E),
+    low_energy_threshold(Low),
+    E =< Low,
+    powerup_seen(Target),
+    Target \= Pos,
+    likely_safe(Target),
+    safe_reachable(Target), !.
+
+% 6) Expand the reachable safe frontier (closest first, manhattan-wise).
+decide(mover(Target)) :-
+    agent_pos(Pos),
+    findall(D-T, (reachable_safe_frontier(T), manhattan(Pos, T, D)), Cands),
     Cands \= [],
     keysort(Cands, [_-Target|_]), !.
 
+% 7a) Best forward step is a confirmed pit -> retreat at any cost.
+decide(mover(Exit)) :-
+    agent_pos(Pos),
+    exit_pos(Exit),
+    Pos \= Exit,
+    best_risky_frontier(Best),
+    confirmed_pit(Best), !.
+
+% 7b) Best forward step is a multi-source-pit suspicion -> retreat.
+decide(mover(Exit)) :-
+    agent_pos(Pos),
+    exit_pos(Exit),
+    Pos \= Exit,
+    best_risky_frontier(Best),
+    risk_pit(Best),
+    source_count(Best, breeze_at, K), K >= 2, !.
+
+% 7c) Carrying gold and only risky-pit frontier left -> retreat home.
+decide(mover(Exit)) :-
+    agent_pos(Pos),
+    exit_pos(Exit),
+    Pos \= Exit,
+    gold_carried(N), N > 0,
+    best_risky_frontier(Best),
+    ( risk_pit(Best) ; confirmed_teleport(Best) ), !.
+
+best_risky_frontier(Target) :-
+    agent_pos(Pos),
+    findall(Score-D-T,
+            (risky_frontier(T), risk_score(T, Score), manhattan(Pos, T, D)),
+            Cands),
+    Cands \= [],
+    keysort(Cands, [_-Target|_]).
+
+% 8) Take the least-risky frontier step otherwise.
 decide(mover(Target)) :-
     agent_pos(Pos),
     findall(Score-D-T,
@@ -260,6 +366,7 @@ decide(mover(Target)) :-
     Cands \= [],
     keysort(Cands, [_-Target|_]), !.
 
+% 9) Nothing useful left -> head home.
 decide(mover(Exit)) :-
     agent_pos(Pos),
     exit_pos(Exit),
@@ -290,14 +397,18 @@ reset_kb :-
     retractall(steps_at(_)),
     retractall(flash_at(_)),
     retractall(gold_seen(_)),
+    retractall(powerup_seen(_)),
     retractall(agent_pos(_)),
     retractall(agent_dir(_)),
+    retractall(agent_energy(_)),
     retractall(gold_carried(_)),
     ( exit_pos(_) -> true ; assertz(exit_pos(1/1)) ),
-    assertz(gold_carried(0)).
+    assertz(gold_carried(0)),
+    assertz(agent_energy(100)).
 
 set_agent_pos(P) :- retractall(agent_pos(_)), assertz(agent_pos(P)).
 set_agent_dir(D) :- retractall(agent_dir(_)), assertz(agent_dir(D)).
+set_energy(E) :- retractall(agent_energy(_)), assertz(agent_energy(E)).
 set_exit(P) :- retractall(exit_pos(_)), assertz(exit_pos(P)).
 inc_gold :-
     ( retract(gold_carried(N)) -> N1 is N + 1 ; N1 = 1 ),

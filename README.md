@@ -77,6 +77,12 @@ Forcar fallback Python:
 py main.py --kb python --map maps/mapa.pl
 ```
 
+Ajustar o piso de score (aborta a partida se cair abaixo):
+
+```bash
+py main.py --min-score -800
+```
+
 Ver opcoes:
 
 ```bash
@@ -170,16 +176,46 @@ Mapas `.pl` no formato `tile(X, Y, 'O').` tambem sao carregados.
 - Prolog representa conhecimento e tomada de decisao quando `swipl` existe.
 - Fallback Python mantem o projeto executavel sem SWI-Prolog instalado.
 
+## Inteligencia do Agente
+
+A base de conhecimento (Python e Prolog) raciocina em camadas:
+
+1. **Logica classica do Wumpus**: para cada percepcao ausente, marca todos os
+   vizinhos como positivamente livres do perigo correspondente; para cada
+   percepcao presente, marca como suspeitos os vizinhos que ainda nao foram
+   provados seguros. Quando, depois de eliminar candidatos, sobra apenas um
+   vizinho consistente com uma brisa/passos/flash, o perigo e' confirmado.
+2. **Visita = prova**: ao sobreviver em uma sala, o agente desconfirma poco e
+   teletransporte naquela celula. Inimigo permanece confirmado: o agente
+   levou dano mas a sala continua hostil.
+3. **Deducao por dano**: se a energia caiu apos um `andar`, o agente conclui
+   que a sala em que acabou de entrar abriga um inimigo, mesmo sem ter
+   passos como percepcao.
+4. **Planejamento em duas pistas**: `likely_safe` rege a exploracao e e' o
+   filtro do A* por padrao; `walkable_for_path` permite voltar pra base
+   atravessando salas conhecidas (incluindo inimigos ja revelados) quando
+   nao ha corredor estritamente seguro.
+5. **Politica de decisao**:
+   - pega o ouro/powerup da sala atual quando vale a pena;
+   - persegue ouros ou powerups conhecidos atingiveis por caminhos seguros;
+   - expande a fronteira segura, classificando alvos por distancia real (BFS)
+     e ganho de informacao (vizinhos desconhecidos);
+   - quando ja carrega ouro e o melhor passo restante e' um poco suspeito,
+     desiste e volta pro portal.
+
 ## Melhorias Ja Incluidas
 
 - Inferencia de perigos confirmados quando uma percepcao aponta para um unico
   vizinho possivel.
 - Politica de risco quando nao ha fronteira segura: evita poco confirmado e
   prefere riscos menores.
-- Agente so volta para sair quando tem os 3 ouros, ou quando tem ouro e energia
-  baixa.
-- GUI com modo automatico e modo manual.
-- Documentacao centralizada apenas neste README.
+- Agente recua quando tem ouro suficiente, esta com energia baixa, ou quando
+  a unica opcao restante e' um poco provavel.
+- Caminho de volta pela trilha visitada quando o corredor seguro foi cortado.
+- Geracao aleatoria com vizinhanca de [1,1] sempre livre de perigos, para que
+  a primeira percepcao do agente seja sempre informativa.
+- GUI mostra o plano A* atual sobre o tabuleiro e a decisao corrente da KB,
+  alem dos modos automatico e manual.
 
 ## Limitacoes
 
@@ -187,4 +223,4 @@ Mapas `.pl` no formato `tile(X, Y, 'O').` tambem sao carregados.
   fica reservado para uma extensao futura.
 - Se o SWI-Prolog nao estiver instalado, o backend usado sera Python.
 - A politica de risco melhora a exploracao, mas ainda nao garante vitoria em
-  todos os mapas aleatorios.
+  todos os mapas aleatorios -- alguns isolam ouros atras de teleportes.

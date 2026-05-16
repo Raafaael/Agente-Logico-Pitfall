@@ -66,8 +66,43 @@ class Agent:
     def backend(self) -> str:
         return getattr(self.kb, "backend", "unknown")
 
+    def planned_path(self) -> list[Position]:
+        """Return the cells of the agent's currently committed plan, if any.
+
+        The path always starts at the agent's current position. Useful to
+        render the A* trace on top of the GUI board.
+        """
+        target = self._current_target()
+        if target is None or target == self.state.pos:
+            return []
+
+        def safe(p: Position) -> bool:
+            return self.kb.likely_safe(p)
+
+        path = astar(self.state.pos, target, safe, size=self.size)
+        if path is None and hasattr(self.kb, "walkable_for_path"):
+            def retrace(p: Position) -> bool:
+                return self.kb.walkable_for_path(p)
+
+            path = astar(self.state.pos, target, retrace, size=self.size)
+        return list(path) if path else []
+
+    def _current_target(self) -> Optional[Position]:
+        decision = self.state.last_decision
+        if decision is None:
+            return None
+        kind, target = decision
+        if kind == "mover":
+            return target
+        return None
+
     def observe(self, percept: Percept, pos: Position, direction: Direction,
                 energy: int, score: int) -> None:
+        prev_pos = self.state.pos
+        prev_energy = self.state.energy
+        moved = prev_pos != pos
+        damage_taken = self.state.last_action == Action.WALK and energy < prev_energy
+
         self.state.pos = pos
         self.state.direction = direction
         self.state.energy = energy
@@ -75,8 +110,16 @@ class Agent:
         self.state.last_percept = percept
 
         self.kb.set_agent_pos(pos)
+        if hasattr(self.kb, "set_energy"):
+            self.kb.set_energy(energy)
         active = percept.as_list()
         self.kb.update_perception(pos, active)
+
+        if damage_taken and moved and hasattr(self.kb, "note_enemy_here"):
+            # We walked into ``pos`` and our energy dropped -- the cell hosts
+            # an enemy. Pits would have killed us and teleporters would have
+            # relocated us, so the only remaining explanation is an enemy.
+            self.kb.note_enemy_here(pos)
 
         # Always replan from scratch each turn: a stale path queue could
         # send the agent into a cell we just learned to be risky.
@@ -86,8 +129,15 @@ class Agent:
         if kind == "gold":
             self.state.gold_carried += 1
             self.kb.mark_gold_taken(self.state.pos)
+        elif kind == "powerup" and hasattr(self.kb, "note_powerup_taken"):
+            self.kb.note_powerup_taken(self.state.pos)
 
     def decide_action(self) -> Action:
+        action = self._choose_action()
+        self.state.last_action = action
+        return action
+
+    def _choose_action(self) -> Action:
         if self.state.pending:
             return self.state.pending.popleft()
 
@@ -119,7 +169,8 @@ class Agent:
         return Action.EXIT
 
     def _move_toward(self, target: Position) -> Optional[Action]:
-        actions = self._plan_path(target)
+        retreat = target == self.exit_pos
+        actions = self._plan_path(target, allow_hostile_retrace=retreat)
         if not actions:
             if target == self.state.pos:
                 return Action.EXIT
@@ -130,11 +181,19 @@ class Agent:
         self.state.pending.extend(actions)
         return self.state.pending.popleft()
 
-    def _plan_path(self, goal: Position) -> list[Action]:
-        def walkable(p: Position) -> bool:
+    def _plan_path(self, goal: Position, allow_hostile_retrace: bool = False) -> list[Action]:
+        def safe(p: Position) -> bool:
             return self.kb.likely_safe(p)
 
-        path = astar(self.state.pos, goal, walkable, size=self.size)
+        path = astar(self.state.pos, goal, safe, size=self.size)
+        if path is None and allow_hostile_retrace and hasattr(self.kb, "walkable_for_path"):
+            # No strictly-safe corridor home: retrace through visited cells
+            # even if they now host known enemies. Reserved for retreats so
+            # we never trade damage for mere exploration.
+            def retrace(p: Position) -> bool:
+                return self.kb.walkable_for_path(p)
+
+            path = astar(self.state.pos, goal, retrace, size=self.size)
         if path is None:
             return []
         return path_to_actions(path, self.state.direction)

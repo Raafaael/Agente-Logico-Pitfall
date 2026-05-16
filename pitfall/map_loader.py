@@ -39,28 +39,40 @@ def all_positions(size: int = GRID_SIZE) -> list[Position]:
     return [(r, c) for r in range(1, size + 1) for c in range(1, size + 1)]
 
 
+_HAZARDS = {CellType.PIT, CellType.ENEMY_SMALL, CellType.ENEMY_BIG, CellType.TELEPORTER}
+
+
 def generate_random_map(
     seed: int | None = None,
     size: int = GRID_SIZE,
     counts: dict[str, int] | None = None,
     ensure_safe_neighbor: bool = True,
+    safe_radius: int = 1,
 ) -> Grid:
     """Generate a random valid map.
 
-    The starting cell [1,1] is always EMPTY. By default at least one of [1,1]'s
-    orthogonal neighbors is left as EMPTY so that the agent has a viable first
-    step (this is not strictly required by the spec but avoids unwinnable runs).
+    The starting cell [1,1] is always EMPTY. By default every orthogonal
+    neighbor of [1,1] is also EMPTY (``safe_radius=1``) so the agent's first
+    observation is unambiguous: no breeze/steps/flash at start means each
+    neighbor is provably safe and exploration can begin without gambling.
+    Setting ``safe_radius=0`` restores the looser legacy behaviour (only the
+    starting cell itself is guaranteed empty).
     """
     rng = random.Random(seed)
     counts = counts or ELEMENT_COUNTS
     grid = empty_grid(size)
 
-    free: list[Position] = [p for p in all_positions(size) if p != START_POS]
-    rng.shuffle(free)
+    reserved: set[Position] = {START_POS}
+    if ensure_safe_neighbor and safe_radius >= 1:
+        # Keep the agent's whole orthogonal neighborhood hazard-free. This is a
+        # stricter version of the historical "one safe neighbor" guarantee and
+        # makes the first move fair: percepts at [1,1] can only come from row 2
+        # / column 2 hazards two steps away (which the agent will sense once it
+        # advances), never from the immediate neighbors themselves.
+        reserved.update(orthogonal_neighbors(START_POS, size))
 
-    if ensure_safe_neighbor:
-        reserved = rng.choice(orthogonal_neighbors(START_POS, size))
-        free = [p for p in free if p != reserved]
+    free: list[Position] = [p for p in all_positions(size) if p not in reserved]
+    rng.shuffle(free)
 
     placement_order = [
         ("pit", CellType.PIT),

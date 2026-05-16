@@ -24,7 +24,7 @@ class GuiConfig:
     seed: int | None = None
     kb_backend: str = "auto"
     reveal: bool = False
-    max_steps: int = 400
+    min_score: int = -500
     delay: float = 0.25
 
 
@@ -143,6 +143,14 @@ class PitfallGUI:
             orient="horizontal",
         ).grid(row=5, column=1, sticky="ew", pady=(6, 2))
 
+        self.show_plan_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(
+            controls,
+            text="Mostrar plano do agente",
+            variable=self.show_plan_var,
+            command=self._refresh,
+        ).grid(row=6, column=0, columnspan=2, sticky="w", pady=(6, 2))
+
         manual = ttk.LabelFrame(side, text="Manual", padding=8)
         manual.grid(row=1, column=0, sticky="ew", pady=(10, 0))
         for i in range(3):
@@ -189,6 +197,7 @@ class PitfallGUI:
                 "Powerups",
                 "Percepcoes",
                 "Acao",
+                "Decisao",
                 "Evento",
                 "Backend",
             )
@@ -344,7 +353,7 @@ class PitfallGUI:
     def _step_once(self) -> None:
         if self.env is None or self.agent is None:
             return
-        if self.env.game_over or self.turn >= self.config.max_steps:
+        if self.env.game_over or self._below_min_score():
             self._stop()
             self._refresh()
             return
@@ -357,11 +366,14 @@ class PitfallGUI:
         self._stop()
         if self.env is None or self.agent is None:
             return
-        if self.env.game_over or self.turn >= self.config.max_steps:
+        if self.env.game_over or self._below_min_score():
             self._refresh()
             return
         self._observe_current()
         self._apply_action(action, source="manual")
+
+    def _below_min_score(self) -> bool:
+        return self.env is not None and self.env.score <= self.config.min_score
 
     def _apply_action(self, action: Action, *, source: str) -> None:
         if self.env is None or self.agent is None:
@@ -386,7 +398,7 @@ class PitfallGUI:
         )
         self._refresh()
 
-        if self.env.game_over or self.turn >= self.config.max_steps:
+        if self.env.game_over or self._below_min_score():
             self._stop()
 
     def _observe_current(self) -> None:
@@ -471,6 +483,9 @@ class PitfallGUI:
                     gold_seen,
                 )
 
+        if self.show_plan_var.get():
+            self._draw_plan(len(grid))
+
         player_key = _player_image_key(self.env.agent_dir)
         if not self.env.alive:
             player_key = "dead"
@@ -481,6 +496,35 @@ class PitfallGUI:
             CELL_SIZE * len(grid),
             CELL_SIZE * len(grid),
             outline="#d6c07a",
+            width=2,
+        )
+
+    def _draw_plan(self, size: int) -> None:
+        if self.agent is None:
+            return
+        path = self.agent.planned_path()
+        if len(path) < 2:
+            return
+        pts: list[float] = []
+        for r, c in path:
+            x = (c - 1) * CELL_SIZE + CELL_SIZE / 2
+            y = (r - 1) * CELL_SIZE + CELL_SIZE / 2
+            pts.extend((x, y))
+        self.canvas.create_line(
+            *pts,
+            fill="#ffd761",
+            width=3,
+            arrow="last",
+            dash=(4, 3),
+            smooth=False,
+        )
+        gr, gc = path[-1]
+        x = (gc - 1) * CELL_SIZE
+        y = (gr - 1) * CELL_SIZE
+        self.canvas.create_rectangle(
+            x + 4, y + 4,
+            x + CELL_SIZE - 4, y + CELL_SIZE - 4,
+            outline="#ffd761",
             width=2,
         )
 
@@ -563,10 +607,11 @@ class PitfallGUI:
         if self.env is None or self.agent is None:
             return
         source = self.map_path.name if self.map_path is not None else "aleatorio"
+        decision = self._format_decision()
         values = {
             "Fonte": source,
             "Seed": str(self.current_seed) if self.map_path is None else "-",
-            "Turno": f"{self.turn}/{self.config.max_steps}",
+            "Turno": str(self.turn),
             "Posicao": str(self.env.agent_pos),
             "Direcao": self.env.agent_dir.pt,
             "Energia": str(self.env.energy),
@@ -575,11 +620,23 @@ class PitfallGUI:
             "Powerups": f"{self.env.powerups_taken}/3",
             "Percepcoes": self.last_percepts,
             "Acao": self.last_action,
+            "Decisao": decision,
             "Evento": self._status_message(),
             "Backend": self.agent.backend,
         }
         for key, value in values.items():
             self.status_vars[key].set(value)
+
+    def _format_decision(self) -> str:
+        if self.agent is None:
+            return "-"
+        decision = self.agent.state.last_decision
+        if decision is None:
+            return "-"
+        kind, target = decision
+        if kind == "mover" and target is not None:
+            return f"mover -> {target}"
+        return kind
 
     def _status_message(self) -> str:
         if self.env is None:
@@ -588,8 +645,8 @@ class PitfallGUI:
             return "saiu do labirinto"
         if not self.env.alive:
             return "morreu"
-        if self.turn >= self.config.max_steps:
-            return "limite de turnos"
+        if self._below_min_score():
+            return f"abortado (score <= {self.config.min_score})"
         return self.last_message
 
     def _append_log(self, msg: str) -> None:
@@ -642,7 +699,7 @@ def launch_gui(
     seed: int | None = None,
     kb_backend: str = "auto",
     reveal: bool = False,
-    max_steps: int = 400,
+    min_score: int = -500,
     delay: float = 0.25,
 ) -> None:
     config = GuiConfig(
@@ -650,7 +707,7 @@ def launch_gui(
         seed=seed,
         kb_backend=kb_backend,
         reveal=reveal,
-        max_steps=max_steps,
+        min_score=min_score,
         delay=delay if delay > 0 else 0.25,
     )
     PitfallGUI(config).run()

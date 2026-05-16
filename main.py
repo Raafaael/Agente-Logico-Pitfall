@@ -29,8 +29,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                    help="Seed para geracao aleatoria do mapa.")
     p.add_argument("--save-map", type=Path,
                    help="Salva o mapa gerado em arquivo JSON antes de jogar.")
-    p.add_argument("--max-steps", type=int, default=400,
-                   help="Limite de turnos (default: 400).")
+    p.add_argument("--min-score", type=int, default=-500,
+                   help="Piso de score; o jogo aborta se o score cair abaixo "
+                        "desse valor (default: -500).")
     p.add_argument("--kb", choices=["auto", "prolog", "python"], default="auto",
                    help="Backend da base de conhecimento.")
     p.add_argument("--reveal", action="store_true",
@@ -61,7 +62,7 @@ def main(argv: list[str] | None = None) -> int:
             seed=args.seed,
             kb_backend=args.kb,
             reveal=args.reveal,
-            max_steps=args.max_steps,
+            min_score=args.min_score,
             delay=args.delay,
         )
         return 0
@@ -104,7 +105,10 @@ def run_loop(env: Environment, agent: Agent, args) -> int:
     last_action_str = "-"
     last_picked: str | None = None
     last_msg = "inicio"
-    for turn in range(1, args.max_steps + 1):
+    aborted_by_score = False
+    turn = 0
+    while True:
+        turn += 1
         percept = env.get_percept()
         agent.observe(
             percept=percept,
@@ -125,6 +129,11 @@ def run_loop(env: Environment, agent: Agent, args) -> int:
         if env.game_over:
             break
 
+        if env.score <= args.min_score:
+            aborted_by_score = True
+            last_msg = f"abortado: score <= {args.min_score}"
+            break
+
         action = agent.decide_action()
         result = env.step(action)
         last_action_str = action.value
@@ -137,11 +146,12 @@ def run_loop(env: Environment, agent: Agent, args) -> int:
         if args.delay > 0:
             time.sleep(args.delay)
 
-    print_final(env, agent, args)
+    print_final(env, agent, args, aborted_by_score=aborted_by_score)
     return 0 if env.escaped or env.alive else 1
 
 
-def print_final(env: Environment, agent: Agent, args) -> None:
+def print_final(env: Environment, agent: Agent, args, *,
+                aborted_by_score: bool = False) -> None:
     if not args.quiet:
         print()
     print("=" * 60)
@@ -151,8 +161,10 @@ def print_final(env: Environment, agent: Agent, args) -> None:
         print(f"status: SAIU PELO PORTAL {list(env.start_pos)}")
     elif not env.alive:
         print("status: MORREU")
+    elif aborted_by_score:
+        print(f"status: abortado (score <= {args.min_score})")
     else:
-        print("status: limite de turnos alcancado")
+        print("status: parado")
     print(f"score final  : {env.score}")
     print(f"energia      : {env.energy}")
     print(f"ouros        : {env.gold_collected}/3")
