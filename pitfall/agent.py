@@ -17,6 +17,7 @@ from .types import (
     Percept,
     Position,
     START_POS,
+    in_bounds,
 )
 
 
@@ -99,9 +100,20 @@ class Agent:
     def observe(self, percept: Percept, pos: Position, direction: Direction,
                 energy: int, score: int) -> None:
         prev_pos = self.state.pos
+        prev_dir = self.state.direction
         prev_energy = self.state.energy
-        moved = prev_pos != pos
+        expected_walk: Position | None = None
+        if self.state.last_action == Action.WALK:
+            dr, dc = prev_dir.delta
+            candidate = (prev_pos[0] + dr, prev_pos[1] + dc)
+            if in_bounds(candidate, self.size):
+                expected_walk = candidate
         damage_taken = self.state.last_action == Action.WALK and energy < prev_energy
+        teleported = (
+            self.state.last_action == Action.WALK
+            and expected_walk is not None
+            and pos != expected_walk
+        )
 
         self.state.pos = pos
         self.state.direction = direction
@@ -115,10 +127,15 @@ class Agent:
         active = percept.as_list()
         self.kb.update_perception(pos, active)
 
-        if damage_taken and moved and hasattr(self.kb, "note_enemy_here"):
+        if teleported and hasattr(self.kb, "note_teleporter_here"):
+            # We tried to step into expected_walk but woke up elsewhere. The
+            # only rule that changes position like that is the bat/teleporter.
+            self.kb.note_teleporter_here(expected_walk)
+
+        if damage_taken and hasattr(self.kb, "note_enemy_here"):
             # We walked into ``pos`` and our energy dropped -- the cell hosts
-            # an enemy. Pits would have killed us and teleporters would have
-            # relocated us, so the only remaining explanation is an enemy.
+            # an enemy. If this happened after a teleport, ``pos`` is the
+            # destination cell that hurt us.
             self.kb.note_enemy_here(pos)
 
         # Always replan from scratch each turn: a stale path queue could
@@ -164,13 +181,21 @@ class Agent:
             return Action.EXIT
         if kind == "mover" and target is not None:
             action = self._move_toward(target)
-            return action if action is not None else Action.EXIT
+            if action is not None:
+                return action
+            if self.state.pos != self.exit_pos:
+                self.state.last_decision = ("mover", self.exit_pos)
+                action = self._move_toward(self.exit_pos)
+                if action is not None:
+                    return action
+            return Action.EXIT
 
         return Action.EXIT
 
     def _move_toward(self, target: Position) -> Optional[Action]:
         retreat = target == self.exit_pos
-        actions = self._plan_path(target, allow_hostile_retrace=retreat)
+        allow_retrace = retreat or self._can_use_hostile_retrace(target)
+        actions = self._plan_path(target, allow_hostile_retrace=allow_retrace)
         if not actions:
             if target == self.state.pos:
                 return Action.EXIT
@@ -208,3 +233,26 @@ class Agent:
                     self.state.pending.extend(actions[1:])
                     return actions[0]
         return None
+
+    def _can_use_hostile_retrace(self, target: Position) -> bool:
+        """Allow exploration through already-visited enemy cells when needed.
+
+        A confirmed enemy hurts, but it is not a one-way trap like a pit or a
+        teleporter. On harder maps this lets the agent leave an isolated pocket
+        instead of burning score on impossible plans.
+        """
+        if self.state.energy <= LOW_ENERGY_RETURN:
+            return False
+
+        snapshot = self.kb.snapshot()
+        target = tuple(target)
+        confirmed_pit = set(map(tuple, snapshot.get("confirmed_pit", [])))
+        confirmed_tele = set(map(tuple, snapshot.get("confirmed_teleport", [])))
+        risk_pit = set(map(tuple, snapshot.get("risk_pit", [])))
+        risk_tele = set(map(tuple, snapshot.get("risk_teleport", [])))
+
+        if target in confirmed_pit or target in confirmed_tele:
+            return False
+        if self.state.gold_carried > 0 and (target in risk_pit or target in risk_tele):
+            return False
+        return True

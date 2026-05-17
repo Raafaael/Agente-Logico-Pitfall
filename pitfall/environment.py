@@ -196,11 +196,13 @@ class Environment:
 
         if cell == CellType.ENEMY_SMALL:
             result["energy"] -= DAMAGE_SMALL
+            result["score"] -= DAMAGE_SMALL
             result["message"] = f"atingido por inimigo pequeno (-{DAMAGE_SMALL})"
             return result
 
         if cell == CellType.ENEMY_BIG:
             result["energy"] -= DAMAGE_BIG
+            result["score"] -= DAMAGE_BIG
             result["message"] = f"atingido por inimigo grande (-{DAMAGE_BIG})"
             return result
 

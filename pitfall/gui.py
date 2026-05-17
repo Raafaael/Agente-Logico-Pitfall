@@ -378,6 +378,7 @@ class PitfallGUI:
     def _apply_action(self, action: Action, *, source: str) -> None:
         if self.env is None or self.agent is None:
             return
+        self.agent.state.last_action = action
         result = self.env.step(action)
         self.turn += 1
 

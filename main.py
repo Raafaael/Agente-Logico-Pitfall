@@ -24,7 +24,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description="Pitfall logical agent (INF1771 - PUC-Rio).",
     )
-    p.add_argument("--map", type=Path, help="Carregar mapa JSON/texto.")
+    p.add_argument("--map", type=Path, help="Carregar mapa JSON/texto/Prolog.")
     p.add_argument("--seed", type=int, default=None,
                    help="Seed para geracao aleatoria do mapa.")
     p.add_argument("--save-map", type=Path,

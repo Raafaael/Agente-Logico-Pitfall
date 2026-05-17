@@ -9,6 +9,7 @@ Both backends expose the same surface used by :mod:`pitfall.agent`:
     - :meth:`set_agent_pos(pos)`
     - :meth:`update_perception(pos, percepts)`
     - :meth:`mark_gold_taken(pos)`
+    - :meth:`note_teleporter_here(pos)`
     - :meth:`likely_safe(pos) -> bool`
     - :meth:`is_visited(pos) -> bool`
     - :meth:`is_known_gold(pos) -> bool`
@@ -20,6 +21,7 @@ Both backends expose the same surface used by :mod:`pitfall.agent`:
 from __future__ import annotations
 
 import logging
+import os
 import re
 import shutil
 import subprocess
@@ -45,6 +47,7 @@ class KnowledgeBase(Protocol):
     def mark_gold_taken(self, pos: Position) -> None: ...
     def note_powerup_taken(self, pos: Position) -> None: ...
     def note_enemy_here(self, pos: Position) -> None: ...
+    def note_teleporter_here(self, pos: Position) -> None: ...
     def likely_safe(self, pos: Position) -> bool: ...
     def walkable_for_path(self, pos: Position) -> bool: ...
     def is_visited(self, pos: Position) -> bool: ...
@@ -65,13 +68,14 @@ class SwiPrologKB:
     backend = "swi-prolog"
 
     def __init__(self, kb_file: Path = KB_FILE, executable: str = "swipl") -> None:
-        if shutil.which(executable) is None:
+        resolved_executable = _resolve_executable(executable)
+        if resolved_executable is None:
             raise PrologUnavailable(f"{executable!r} not found in PATH")
         if not kb_file.exists():
             raise FileNotFoundError(kb_file)
 
         self._proc = subprocess.Popen(
-            [executable, "-q", "-f", str(kb_file)],
+            [resolved_executable, "-q", "-f", str(kb_file)],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -145,6 +149,9 @@ class SwiPrologKB:
 
     def note_enemy_here(self, pos: Position) -> None:
         self._do(f"note_enemy_here({_pos(pos)})")
+
+    def note_teleporter_here(self, pos: Position) -> None:
+        self._do(f"note_teleporter_here({_pos(pos)})")
 
     def likely_safe(self, pos: Position) -> bool:
         return self._do(f"likely_safe({_pos(pos)})")
@@ -221,6 +228,25 @@ class SwiPrologKB:
 
 def _pos(p: Position) -> str:
     return f"{p[0]}/{p[1]}"
+
+
+def _resolve_executable(executable: str) -> str | None:
+    found = shutil.which(executable)
+    if found is not None:
+        return found
+
+    raw_path = Path(executable)
+    if raw_path.exists():
+        return str(raw_path)
+
+    candidates = [
+        Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "swipl" / "bin" / "swipl.exe",
+        Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")) / "swipl" / "bin" / "swipl.exe",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return str(candidate)
+    return None
 
 
 def _parse_pos(text: str) -> Position:

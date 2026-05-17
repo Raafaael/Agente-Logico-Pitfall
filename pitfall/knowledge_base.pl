@@ -137,6 +137,14 @@ note_enemy_here(Pos) :-
     retractall(enemy_clear(Pos)),
     retractall(risk_enemy(Pos)).
 
+% A walk that should have landed in Pos but woke up elsewhere proves that Pos
+% is a teleporter/bat cell.
+note_teleporter_here(Pos) :-
+    assert_unique(confirmed_teleport(Pos)),
+    assert_unique(risk_teleport(Pos)),
+    retractall(tele_clear(Pos)),
+    retractall(confirmed_safe(Pos)).
+
 infer_confirmed_hazards :- infer_one_hazard, !, infer_confirmed_hazards.
 infer_confirmed_hazards.
 
@@ -211,8 +219,7 @@ reachable_safe_frontier(Pos) :-
     safe_reachable(Pos).
 
 safe_reachable(Pos) :-
-    agent_pos(Start),
-    bfs_safe([Start], [Start], Pos).
+    path_distance(Pos, likely_safe, _).
 
 bfs_safe(Queue, _, Goal) :- member(Goal, Queue), !.
 bfs_safe(Queue, Visited, Goal) :-
@@ -226,6 +233,45 @@ bfs_safe(Queue, Visited, Goal) :-
     Next \= [],
     append(Visited, Next, Visited1),
     bfs_safe(Next, Visited1, Goal).
+
+path_distance(Goal, WalkablePred, D) :-
+    agent_pos(Start),
+    bfs_distance([Start-0], [Start], Goal, WalkablePred, D).
+
+bfs_distance([Goal-D|_], _, Goal, _, D) :- !.
+bfs_distance([Pos-D0|Rest], Seen, Goal, WalkablePred, D) :-
+    findall(N-D1,
+            ( adjacent(Pos, N),
+              \+ member(N, Seen),
+              ( N = Goal
+              ; GoalCall =.. [WalkablePred, N],
+                call(GoalCall)
+              ),
+              D1 is D0 + 1
+            ),
+            NextRaw),
+    findall(N, member(N-_, NextRaw), NextPositions),
+    append(Seen, NextPositions, Seen1),
+    append(Rest, NextRaw, Queue1),
+    bfs_distance(Queue1, Seen1, Goal, WalkablePred, D).
+
+frontier_distance(Pos, D) :-
+    findall(D0,
+            ( path_distance(Pos, likely_safe, D0)
+            ; path_distance(Pos, walkable_for_path, D0)
+            ),
+            Distances),
+    Distances \= [],
+    min_list(Distances, D).
+
+info_gain(Pos, Gain) :-
+    findall(N,
+            ( adjacent(Pos, N),
+              \+ visited(N),
+              \+ confirmed_safe(N)
+            ),
+            Ns),
+    length(Ns, Gain).
 
 risky(Pos) :-
     \+ confirmed_safe(Pos),
@@ -300,10 +346,15 @@ decide(sair) :-
 % 4) Known gold reachable through safe cells -> go grab it.
 decide(mover(Target)) :-
     agent_pos(Pos),
-    gold_seen(Target),
-    Target \= Pos,
-    likely_safe(Target),
-    safe_reachable(Target), !.
+    findall(D-T,
+            ( gold_seen(T),
+              T \= Pos,
+              likely_safe(T),
+              path_distance(T, likely_safe, D)
+            ),
+            Cands),
+    Cands \= [],
+    keysort(Cands, [_-Target|_]), !.
 
 % 5) Energy low + known reachable powerup -> stock up before exploring more.
 decide(mover(Target)) :-
@@ -311,15 +362,25 @@ decide(mover(Target)) :-
     agent_energy(E),
     low_energy_threshold(Low),
     E =< Low,
-    powerup_seen(Target),
-    Target \= Pos,
-    likely_safe(Target),
-    safe_reachable(Target), !.
+    findall(D-T,
+            ( powerup_seen(T),
+              T \= Pos,
+              likely_safe(T),
+              path_distance(T, likely_safe, D)
+            ),
+            Cands),
+    Cands \= [],
+    keysort(Cands, [_-Target|_]), !.
 
-% 6) Expand the reachable safe frontier (closest first, manhattan-wise).
+% 6) Expand the reachable safe frontier (closest by BFS, then information gain).
 decide(mover(Target)) :-
-    agent_pos(Pos),
-    findall(D-T, (reachable_safe_frontier(T), manhattan(Pos, T, D)), Cands),
+    findall(D-NegInfo-T,
+            ( reachable_safe_frontier(T),
+              path_distance(T, likely_safe, D),
+              info_gain(T, Info),
+              NegInfo is -Info
+            ),
+            Cands),
     Cands \= [],
     keysort(Cands, [_-Target|_]), !.
 
@@ -350,18 +411,26 @@ decide(mover(Exit)) :-
     ( risk_pit(Best) ; confirmed_teleport(Best) ), !.
 
 best_risky_frontier(Target) :-
-    agent_pos(Pos),
-    findall(Score-D-T,
-            (risky_frontier(T), risk_score(T, Score), manhattan(Pos, T, D)),
+    findall(Score-D-NegInfo-T,
+            ( risky_frontier(T),
+              frontier_distance(T, D),
+              risk_score(T, Score),
+              info_gain(T, Info),
+              NegInfo is -Info
+            ),
             Cands),
     Cands \= [],
     keysort(Cands, [_-Target|_]).
 
 % 8) Take the least-risky frontier step otherwise.
 decide(mover(Target)) :-
-    agent_pos(Pos),
-    findall(Score-D-T,
-            (risky_frontier(T), risk_score(T, Score), manhattan(Pos, T, D)),
+    findall(Score-D-NegInfo-T,
+            ( risky_frontier(T),
+              frontier_distance(T, D),
+              risk_score(T, Score),
+              info_gain(T, Info),
+              NegInfo is -Info
+            ),
             Cands),
     Cands \= [],
     keysort(Cands, [_-Target|_]), !.

@@ -216,6 +216,13 @@ class PythonKB:
         self.enemy_clear.discard(pos)
         self.risk_enemy.discard(pos)
 
+    def note_teleporter_here(self, pos: Position) -> None:
+        """Record a teleporter inferred from a forced displacement."""
+        self.confirmed_teleport.add(pos)
+        self.risk_teleport.add(pos)
+        self.tele_clear.discard(pos)
+        self.confirmed_safe.discard(pos)
+
     def likely_safe(self, pos: Position) -> bool:
         if self._confirmed_any(pos):
             return False
@@ -313,13 +320,19 @@ class PythonKB:
         # 4) Forced into the risky frontier: bail if it is too costly given
         #    the gold we already carry.
         risky = self.risky_frontier()
-        if risky:
-            best = min(
-                risky,
+        risky_reachable: list[tuple[Position, float]] = []
+        for p in risky:
+            distance = min(self._safe_path_distance(p), self._retrace_path_distance(p))
+            if distance != float("inf"):
+                risky_reachable.append((p, distance))
+        if risky_reachable:
+            best, _distance = min(
+                risky_reachable,
                 key=lambda p: (
-                    self.risk_score(p),
-                    -self._info_gain(p),
-                    abs(p[0] - pos[0]) + abs(p[1] - pos[1]),
+                    self.risk_score(p[0]),
+                    p[1],
+                    -self._info_gain(p[0]),
+                    abs(p[0][0] - pos[0]) + abs(p[0][1] - pos[1]),
                 ),
             )
             if self._should_retreat(best):
@@ -363,6 +376,13 @@ class PythonKB:
     def _safe_path_distance(self, goal: Position) -> float:
         """BFS distance over known-safe cells; the goal itself is allowed
         even if it is only on the frontier (not yet visited)."""
+        return self._path_distance(goal, self.likely_safe)
+
+    def _retrace_path_distance(self, goal: Position) -> float:
+        """BFS distance over safe cells plus already-visited hostile cells."""
+        return self._path_distance(goal, self.walkable_for_path)
+
+    def _path_distance(self, goal: Position, walkable) -> float:
         start = self.agent_pos
         if start == goal:
             return 0
@@ -375,7 +395,7 @@ class PythonKB:
                     continue
                 if nb == goal:
                     return d + 1
-                if not self.likely_safe(nb):
+                if not walkable(nb):
                     continue
                 seen.add(nb)
                 queue.append((nb, d + 1))

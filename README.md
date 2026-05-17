@@ -168,7 +168,7 @@ Mapas `.pl` no formato `tile(X, Y, 'O').` tambem sao carregados.
 - Energia inicial 100.
 - Geracao aleatoria com 2 inimigos pequenos, 2 grandes, 4 teletransportes,
   8 pocos, 3 ouros e 3 powerups.
-- Pontuacao por acao, ouro, poco e morte.
+- Pontuacao por acao, ouro, dano de inimigo, poco e morte.
 - Powerup recupera energia automaticamente ao entrar na sala.
 - Teletransporte pode cair em qualquer outra sala, inclusive perigo.
 - Agente nao consulta o mapa real para decidir.
@@ -191,11 +191,16 @@ A base de conhecimento (Python e Prolog) raciocina em camadas:
 3. **Deducao por dano**: se a energia caiu apos um `andar`, o agente conclui
    que a sala em que acabou de entrar abriga um inimigo, mesmo sem ter
    passos como percepcao.
-4. **Planejamento em duas pistas**: `likely_safe` rege a exploracao e e' o
+4. **Deducao por teletransporte**: se um `andar` deveria terminar em uma sala
+   vizinha, mas o agente acorda em outra posicao, a KB confirma que a sala
+   intermediaria era um teletransporte.
+5. **Planejamento em duas pistas**: `likely_safe` rege a exploracao e e' o
    filtro do A* por padrao; `walkable_for_path` permite voltar pra base
    atravessando salas conhecidas (incluindo inimigos ja revelados) quando
-   nao ha corredor estritamente seguro.
-5. **Politica de decisao**:
+   nao ha corredor estritamente seguro. Em mapas dificeis, o agente tambem
+   pode retrilhar inimigos visitados para escapar de bolsoes isolados quando
+   ainda tem energia suficiente.
+6. **Politica de decisao**:
    - pega o ouro/powerup da sala atual quando vale a pena;
    - persegue ouros ou powerups conhecidos atingiveis por caminhos seguros;
    - expande a fronteira segura, classificando alvos por distancia real (BFS)
@@ -212,6 +217,11 @@ A base de conhecimento (Python e Prolog) raciocina em camadas:
 - Agente recua quando tem ouro suficiente, esta com energia baixa, ou quando
   a unica opcao restante e' um poco provavel.
 - Caminho de volta pela trilha visitada quando o corredor seguro foi cortado.
+- Fallback contra planos impossiveis: se a KB escolhe um alvo sem rota
+  executavel, o agente troca para retorno ao portal em vez de gastar turnos
+  tentando sair fora da base.
+- Inferencia explicita de teletransportes quando a posicao final do movimento
+  nao corresponde a sala vizinha esperada.
 - Geracao aleatoria com vizinhanca de [1,1] sempre livre de perigos, para que
   a primeira percepcao do agente seja sempre informativa.
 - GUI mostra o plano A* atual sobre o tabuleiro e a decisao corrente da KB,
