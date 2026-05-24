@@ -9,6 +9,13 @@ from .types import Action, Direction, GRID_SIZE, Position, orthogonal_neighbors
 
 
 def manhattan(a: Position, b: Position) -> int:
+    """Calcula a distancia Manhattan entre duas posicoes.
+
+    Essa heuristica considera apenas movimentos ortogonais, que sao exatamente
+    os movimentos permitidos no tabuleiro. Por isso ela funciona bem como
+    estimativa para o A*: e simples, barata de calcular e nunca superestima o
+    custo minimo real entre duas celulas.
+    """
     return abs(a[0] - b[0]) + abs(a[1] - b[1])
 
 
@@ -18,11 +25,16 @@ def astar(
     is_walkable: Callable[[Position], bool],
     size: int = GRID_SIZE,
 ) -> Optional[list[Position]]:
-    """Standard A* over a 12x12 grid with Manhattan heuristic.
+    """Busca um caminho entre duas posicoes usando A*.
 
-    `is_walkable(pos)` is queried for any candidate cell except `start`. The
-    `goal` itself is *not* required to be walkable — this lets the agent plan a
-    path *toward* a frontier cell that has not yet been confirmed safe.
+    A funcao recebe uma posicao inicial, uma meta e um predicado `is_walkable`
+    que informa se uma celula pode ser usada no planejamento. O retorno e uma
+    lista de posicoes, incluindo origem e destino, ou `None` quando nao existe
+    caminho viavel.
+
+    O objetivo do codigo aqui e manter o planejador separado da logica do
+    agente: ele apenas calcula trajetos, sem decidir se vale a pena correr um
+    risco ou se e melhor voltar para a saida.
     """
     if start == goal:
         return [start]
@@ -63,11 +75,12 @@ def path_to_actions(
     path: Iterable[Position],
     initial_dir: Direction,
 ) -> list[Action]:
-    """Convert a list of positions into a sequence of low-level actions.
+    """Converte um caminho em acoes de giro e movimento.
 
-    Generates the minimum number of left/right turns needed to align with each
-    next step, followed by a WALK. The initial position must be the agent's
-    current position.
+    O agente nao executa "teletransportes" de uma celula para outra: ele
+    precisa alinhar a orientacao e depois andar. Por isso, esta funcao traduz
+    um caminho geometrico em uma sequencia concreta de acoes de baixo nivel
+    que o ambiente entende.
     """
     path = list(path)
     if len(path) < 2:
@@ -85,6 +98,12 @@ def path_to_actions(
 
 
 def _align_actions(cur: Direction, target: Direction) -> list[Action]:
+    """Gera os giros necessarios para alinhar a orientacao.
+
+    Sempre que possivel, a funcao escolhe a menor quantidade de giros. No caso
+    de meia-volta, ela usa duas rotacoes para a direita por simplicidade e
+    previsibilidade no comportamento do agente.
+    """
     if cur == target:
         return []
     order = [Direction.NORTH, Direction.EAST, Direction.SOUTH, Direction.WEST]
@@ -93,5 +112,4 @@ def _align_actions(cur: Direction, target: Direction) -> list[Action]:
         return [Action.TURN_RIGHT]
     if delta == 3:
         return [Action.TURN_LEFT]
-    # 180-degree turn: prefer two right turns.
     return [Action.TURN_RIGHT, Action.TURN_RIGHT]

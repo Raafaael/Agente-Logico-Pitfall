@@ -32,7 +32,13 @@ from .types import (
 
 
 class Environment:
-    """Ground-truth game world. Owns the grid and applies actions."""
+    """Mantem o estado real do jogo e aplica as regras do ambiente.
+
+    Esta classe e a fonte de verdade do mundo: posicao do agente, energia,
+    pontuacao, coleta de itens, dano, teletransporte e fim de jogo. O agente
+    nao deve consultar o mapa interno daqui diretamente; ele interage com o
+    ambiente apenas por meio das percepcoes e dos resultados das acoes.
+    """
 
     def __init__(
         self,
@@ -62,10 +68,20 @@ class Environment:
 
     @property
     def game_over(self) -> bool:
+        """Indica se o jogo terminou.
+
+        O jogo acaba quando o agente morre ou quando sai pela posicao inicial,
+        conforme descrito no enunciado do trabalho.
+        """
         return not self.alive or self.escaped
 
     def get_percept(self) -> Percept:
-        """Compute the percepts the agent senses at its current position."""
+        """Monta as percepcoes da posicao atual do agente.
+
+        As percepcoes sao calculadas a partir da celula atual e de seus
+        vizinhos ortogonais. Isso traduz o mapa real para a visao parcial que
+        o agente pode usar na tomada de decisao.
+        """
         pos = self.agent_pos
         cell = get_cell(self._grid, pos)
         breeze = steps = flash = False
@@ -90,7 +106,12 @@ class Environment:
         )
 
     def step(self, action: Action) -> StepResult:
-        """Apply an action, mutate state and return a result."""
+        """Executa uma acao e devolve o resultado do turno.
+
+        A funcao aplica o custo da acao, atualiza posicao e orientacao quando
+        necessario, processa eventos da celula visitada e devolve um
+        `StepResult` com os deltas de score, energia e percepcoes resultantes.
+        """
         if self.game_over:
             return StepResult(
                 percept=self.get_percept(),
@@ -183,6 +204,12 @@ class Environment:
         )
 
     def _enter_cell(self, pos: Position, depth: int = 0) -> dict:
+        """Resolve o efeito de entrar em uma celula do mapa.
+
+        Aqui ficam concentradas as consequencias diretas de cada tipo de
+        celula: dano por inimigo, morte em poco, teletransporte e salas sem
+        evento. Separar essa logica ajuda a manter `step()` mais legivel.
+        """
         result = {
             "score": 0,
             "energy": 0,
@@ -233,5 +260,9 @@ class Environment:
         return result
 
     def reveal_grid(self) -> Grid:
-        """Returns a deep copy of the underlying grid (for rendering/debug only)."""
+        """Devolve uma copia do mapa para renderizacao e depuracao.
+
+        Isso e util para GUI, impressao terminal e testes locais, sem expor
+        a estrutura interna do ambiente para modificacoes externas acidentais.
+        """
         return [row[:] for row in self._grid]

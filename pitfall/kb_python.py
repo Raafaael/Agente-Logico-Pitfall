@@ -21,31 +21,29 @@ from .types import GOLD_TARGET, GRID_SIZE, INITIAL_ENERGY, Position, orthogonal_
 
 @dataclass
 class PythonKB:
-    """Implementacao Python do modelo memory/certeza (espelho de knowledge_base.pl).
+    """Replica em Python a base de conhecimento usada no Prolog.
 
-    memory[pos] = conjunto de sinais de perigo que pos PODERIA estar emitindo.
-    Atualizado por intersecao a cada vizinho visitado. memory[pos] = set() => segura.
-    certeza = conjunto de posicoes confirmadas (visitadas ou deduzidas seguras).
+    O objetivo desta classe e manter o mesmo comportamento da KB declarativa
+    mesmo quando o SWI-Prolog nao estiver disponivel. Assim, o projeto pode ser
+    executado e testado em qualquer ambiente, preservando a mesma ideia de
+    representacao: memoria parcial, certeza de seguranca, suspeitas de perigo e
+    escolhas guiadas apenas por percepcoes.
     """
 
     size: int = GRID_SIZE
 
-    # Modelo memory/certeza (equivalente ao Prolog)
     memory: dict = field(default_factory=dict)          # pos -> frozenset de obs
     certeza: set = field(default_factory=set)
     visited: set[Position] = field(default_factory=set)
 
-    # Sinais de perigo registrados em celulas visitadas (para inferencia)
     breeze_at: set[Position] = field(default_factory=set)
     steps_at: set[Position] = field(default_factory=set)
     flash_at: set[Position] = field(default_factory=set)
 
-    # Perigos confirmados por unicidade
     confirmed_pit: set[Position] = field(default_factory=set)
     confirmed_enemy: set[Position] = field(default_factory=set)
     confirmed_teleport: set[Position] = field(default_factory=set)
 
-    # Percepcoes locais
     gold_seen: set[Position] = field(default_factory=set)
     powerup_seen: set[Position] = field(default_factory=set)
 
@@ -56,16 +54,19 @@ class PythonKB:
 
     backend: str = "python"
 
-    # Limiar de energia para buscar/pegar powerup (energy_low_threshold em Prolog)
     _energy_low: int = field(default=INITIAL_ENERGY // 2, init=False, repr=False)
 
-    # Mapeamento: nome do percepto -> observacao de perigo
     _PERCEPT_OBS: dict = field(
         default_factory=lambda: {"breeze": "brisa", "steps": "passos", "flash": "palmas"},
         init=False, repr=False,
     )
 
     def reset(self) -> None:
+        """Limpa toda a memoria da base de conhecimento.
+
+        Esse metodo devolve a KB ao estado inicial do jogo, apagando fatos
+        observados, confirmacoes de perigo, itens conhecidos e estado do agente.
+        """
         self.memory.clear()
         self.certeza.clear()
         self.visited.clear()
@@ -82,16 +83,37 @@ class PythonKB:
         self.gold_carried = 0
 
     def set_exit(self, pos: Position) -> None:
+        """Define a posicao de saida do mapa.
+
+        A saida normalmente coincide com a posicao inicial, mas fica
+        parametrizada para manter a KB desacoplada do carregamento de mapas.
+        """
         self.exit_pos = pos
 
     def set_agent_pos(self, pos: Position) -> None:
+        """Atualiza a posicao conhecida do agente.
+
+        A KB usa essa informacao para decidir entre pegar, explorar, voltar ou
+        sair do mapa.
+        """
         self.agent_pos = pos
 
     def set_agent_energy(self, energy: int) -> None:
+        """Atualiza a energia conhecida do agente.
+
+        A energia influencia principalmente as regras de busca por powerup e de
+        retorno mais conservador.
+        """
         self.agent_energy = energy
 
     def update_perception(self, pos: Position, percepts: list[str]) -> None:
-        # Celula atual: visitada, com certeza, memory = {} (segura)
+        """Atualiza a memoria com base nas percepcoes atuais.
+
+        A celula atual passa a ser tratada como visitada e segura. Em seguida,
+        a KB propaga para os vizinhos os sinais de perigo observados e tenta
+        deduzir novas certezas, como uma fonte unica de poco, inimigo ou
+        teletransporte.
+        """
         self.visited.add(pos)
         self.certeza.add(pos)
         self.memory[pos] = frozenset()
@@ -99,12 +121,10 @@ class PythonKB:
         self.confirmed_enemy.discard(pos)
         self.confirmed_teleport.discard(pos)
 
-        # Registrar sinais de perigo percebidos (para inferencia de fonte unica)
         self._remember_signal(pos, "breeze" in percepts, self.breeze_at)
         self._remember_signal(pos, "steps"  in percepts, self.steps_at)
         self._remember_signal(pos, "flash"  in percepts, self.flash_at)
 
-        # Percepcoes locais: ouro e powerup na celula atual
         if "glow" in percepts:
             self.gold_seen.add(pos)
         else:
@@ -115,12 +135,10 @@ class PythonKB:
         else:
             self.powerup_seen.discard(pos)
 
-        # Construir vetor de sinais de perigo para vizinhos
         hazard_obs = frozenset(
             obs for p, obs in self._PERCEPT_OBS.items() if p in percepts
         )
 
-        # Atualizar memoria dos vizinhos por intersecao (modelo main.pl)
         for nb in orthogonal_neighbors(pos, self.size):
             if nb in self.certeza:
                 continue
@@ -129,7 +147,6 @@ class PythonKB:
             else:
                 self.memory[nb] = hazard_obs
 
-        # Inferencia: celulas com memoria vazia sao seguras; fonte unica de perigo
         self._infer_safe_from_empty()
         changed = True
         while changed:
@@ -139,12 +156,22 @@ class PythonKB:
 
     def _remember_signal(self, pos: Position, present: bool,
                          store: set[Position]) -> None:
+        """Guarda ou remove um sinal percebido em uma celula.
+
+        Esse helper centraliza a atualizacao dos conjuntos de brisa, passos e
+        flash percebidos durante a exploracao.
+        """
         if present:
             store.add(pos)
         else:
             store.discard(pos)
 
     def _infer_safe_from_empty(self) -> None:
+        """Marca como segura uma celula sem sinais possiveis de perigo.
+
+        Quando a intersecao de evidencias fica vazia, a KB conclui que aquela
+        celula nao pode conter nenhum dos perigos modelados.
+        """
         for pos, obs in list(self.memory.items()):
             if len(obs) == 0 and pos not in self.certeza:
                 self.certeza.add(pos)
@@ -158,6 +185,12 @@ class PythonKB:
         hazard_obs: str,
         confirmed_set: set[Position],
     ) -> bool:
+        """Confirma um perigo quando resta apenas uma fonte possivel.
+
+        Esse e o passo de inferencia mais forte da KB: se um sinal observado so
+        pode vir de uma unica celula ainda incerta, essa celula passa a ser
+        tratada como perigo confirmado.
+        """
         changed = False
         for source in tuple(sensed_set):
             cands = [
@@ -174,13 +207,27 @@ class PythonKB:
         return changed
 
     def mark_gold_taken(self, pos: Position) -> None:
+        """Remove o ouro conhecido de uma posicao coletada.
+
+        Tambem atualiza o contador interno de ouros carregados, usado na regra
+        de retorno e saida.
+        """
         self.gold_seen.discard(pos)
         self.gold_carried += 1
 
     def mark_powerup_taken(self, pos: Position) -> None:
+        """Remove o powerup conhecido de uma posicao coletada.
+
+        Isso impede que a KB continue perseguindo um item que ja foi consumido.
+        """
         self.powerup_seen.discard(pos)
 
     def likely_safe(self, pos: Position) -> bool:
+        """Verifica se a celula e tratada como segura pela KB.
+
+        Uma celula e segura quando ja foi confirmada como tal ou quando nao ha
+        qualquer evidencia restante de poco, inimigo ou teletransporte nela.
+        """
         if not self._valid(pos):
             return False
         if pos in self.confirmed_pit:
@@ -193,12 +240,19 @@ class PythonKB:
         return not (obs & {"brisa", "passos", "palmas"})
 
     def is_visited(self, pos: Position) -> bool:
+        """Indica se a celula ja foi visitada pelo agente."""
         return pos in self.visited
 
     def is_known_gold(self, pos: Position) -> bool:
+        """Indica se a KB sabe que existe ouro nessa celula."""
         return pos in self.gold_seen
 
     def is_risky(self, pos: Position) -> bool:
+        """Indica se a celula ainda tem risco relevante.
+
+        Essa verificacao e usada para evitar movimentos que contradigam as
+        suspeitas atuais da base de conhecimento.
+        """
         if pos in self.certeza:
             return False
         if pos in self.confirmed_pit or pos in self.confirmed_enemy or pos in self.confirmed_teleport:
@@ -207,6 +261,10 @@ class PythonKB:
         return bool(obs & {"brisa", "passos", "palmas"})
 
     def safe_unvisited_frontier(self) -> list[Position]:
+        """Lista as celulas seguras ainda nao visitadas.
+
+        Essa fronteira e a principal materia-prima da exploracao prudente.
+        """
         return [
             (r, c)
             for r in range(1, self.size + 1)
@@ -215,41 +273,22 @@ class PythonKB:
         ]
 
     def decide(self) -> tuple[str, Optional[Position]]:
-        """Espelho das regras decide/1 de knowledge_base.pl.
+        """Escolhe a proxima meta com base no estado conhecido.
 
-        O agente nunca retorna com ouro parcial por energia baixa (fiel ao main.pl).
-        O retorno forcado fica por conta de agent.py (CRITICAL_ENERGY_RETURN=25).
-
-        Prioridade:
-          1. pegar ouro no local
-          2. pegar powerup no local quando energia baixa
-          3. sair com todos os ouros na saida
-          4. mover para ouro seguro conhecido
-          5. mover para powerup mais proximo quando energia baixa (energia_baixa)
-          6. explorar fronteira segura
-          7. arriscar fronteira de menor risco
-          8. voltar para saida (fallback — sem mais o que explorar)
+        A ordem das regras tenta ser simples de explicar: primeiro coletar o
+        que esta na celula atual, depois buscar objetivos claramente vantajosos
+        e, por fim, explorar ou recuar quando nao houver opcao melhor.
         """
         pos = self.agent_pos
-
-        # 1. Ouro no local
         if pos in self.gold_seen:
             return "pegar", None
-
-        # 2. Powerup no local: pegar sempre que encontrado.
         if pos in self.powerup_seen:
             return "pegar", None
-
-        # 3. Saida com todos os ouros
         if pos == self.exit_pos and self.gold_carried >= GOLD_TARGET:
             return "sair", None
-
-        # 4. Ouro seguro conhecido
         for g in self.gold_seen:
             if g != pos and self.likely_safe(g):
                 return "mover", g
-
-        # 5. energia_baixa: buscar powerup mais proximo
         if self.agent_energy <= self._energy_low:
             reachable = [
                 p for p in self.powerup_seen
@@ -260,14 +299,12 @@ class PythonKB:
                              key=lambda p: abs(p[0]-pos[0]) + abs(p[1]-pos[1]))
                 return "mover", target
 
-        # 6. Explorar fronteira segura
         frontier = self.safe_unvisited_frontier()
         if frontier:
             target = min(frontier,
                          key=lambda p: abs(p[0]-pos[0]) + abs(p[1]-pos[1]))
             return "mover", target
 
-        # 7. Arriscar fronteira de menor risco
         risky = self.risky_frontier()
         if risky:
             target = min(risky,
@@ -275,13 +312,17 @@ class PythonKB:
                                         abs(p[0]-pos[0]) + abs(p[1]-pos[1])))
             return "mover", target
 
-        # 8. Fallback: voltar para saida (sem mais o que explorar)
         if pos != self.exit_pos:
             return "mover", self.exit_pos
 
         return "sair", None
 
     def risky_frontier(self) -> list[Position]:
+        """Lista a fronteira desconhecida que ainda envolve risco.
+
+        Essas celulas sao vizinhas da area conhecida, mas ainda carregam sinais
+        suficientes para exigir cautela.
+        """
         out: set[Position] = set()
         for seen in self.visited | self.certeza:
             for nb in orthogonal_neighbors(seen, self.size):
@@ -293,6 +334,12 @@ class PythonKB:
         return sorted(out)
 
     def risk_score(self, pos: Position) -> int:
+        """Calcula um peso simples para comparar riscos.
+
+        O valor nao precisa ser matematicamente perfeito; ele serve apenas como
+        criterio de desempate para escolher o menor mal quando nao ha caminho
+        claramente seguro.
+        """
         if pos in self.confirmed_pit:
             return 10_000
         score = 10
@@ -312,9 +359,19 @@ class PythonKB:
         return score
 
     def _source_count(self, pos: Position, sources: set[Position]) -> int:
+        """Conta quantos sinais observados apontam para a celula.
+
+        Quanto mais fontes apontam para o mesmo lugar, maior tende a ser a
+        suspeita associada a essa posicao.
+        """
         return sum(1 for src in sources if pos in orthogonal_neighbors(src, self.size))
 
     def _confirmed_any(self, pos: Position) -> bool:
+        """Indica se a celula ja foi confirmada como algum perigo.
+
+        Esse helper existe principalmente para deixar outras verificacoes mais
+        legiveis.
+        """
         return (
             pos in self.confirmed_pit
             or pos in self.confirmed_enemy
@@ -322,10 +379,19 @@ class PythonKB:
         )
 
     def _valid(self, pos: Position) -> bool:
+        """Valida se a posicao esta dentro do tabuleiro.
+
+        A KB usa isso antes de qualquer inferencia que dependa de coordenadas.
+        """
         r, c = pos
         return 1 <= r <= self.size and 1 <= c <= self.size
 
     def snapshot(self) -> dict:
+        """Gera um resumo da KB para debug e interface.
+
+        O snapshot e usado pela GUI e pela renderizacao textual para mostrar o
+        que o agente sabe, suspeita ou confirmou ate o momento.
+        """
         safe = [
             (r, c)
             for r in range(1, self.size + 1)

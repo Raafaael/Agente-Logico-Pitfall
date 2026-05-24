@@ -21,6 +21,11 @@ ASSET_DIR = Path(__file__).resolve().parent.parent / "assets"
 
 @dataclass
 class GuiConfig:
+    """Agrupa as opcoes usadas para iniciar a interface.
+
+    Essa estrutura deixa a criacao da GUI mais simples de entender e evita uma
+    sequencia longa de parametros soltos no ponto de entrada.
+    """
     map_path: Path | None = None
     seed: int | None = None
     kb_backend: str = "auto"
@@ -30,7 +35,13 @@ class GuiConfig:
 
 
 class PitfallGUI:
-    """Visual runner that reuses the same Environment/Agent used by the CLI."""
+    """Interface grafica que reutiliza o mesmo jogo da linha de comando.
+
+    A ideia desta classe e apresentar visualmente o mesmo comportamento usado
+    no modo terminal, sem duplicar regras de negocio. Assim, a GUI funciona
+    como camada de visualizacao e controle, e nao como uma segunda versao do
+    jogo.
+    """
 
     def __init__(self, config: GuiConfig) -> None:
         self.config = config
@@ -67,13 +78,18 @@ class PitfallGUI:
         self._new_game(reuse_source=True)
 
     def run(self) -> None:
+        """Inicia o loop principal da interface.
+
+        Depois desse ponto, a execucao passa a ser controlada pelo Tkinter.
+        """
         self.root.mainloop()
 
-    # ------------------------------------------------------------------
-    # UI construction
-    # ------------------------------------------------------------------
-
     def _build_layout(self) -> None:
+        """Monta os paines, botoes e areas de status.
+
+        O layout foi separado em uma funcao propria para manter o construtor da
+        classe mais legivel e facilitar ajustes visuais futuros.
+        """
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
 
@@ -227,6 +243,11 @@ class PitfallGUI:
         self.log.configure(yscrollcommand=scroll.set)
 
     def _load_images(self) -> None:
+        """Carrega e redimensiona as imagens usadas no tabuleiro.
+
+        Quando algum arquivo grafico nao estiver disponivel, a interface ainda
+        continua funcional usando desenhos simples no canvas.
+        """
         names = {
             "floor": "floor.png",
             "unknown": "bw_floor.png",
@@ -252,17 +273,24 @@ class PitfallGUI:
                     pass
 
     def _bind_keys(self) -> None:
+        """Liga os atalhos do teclado aos comandos da GUI.
+
+        Isso facilita testes rapidos e apresentacoes passo a passo sem depender
+        apenas dos botoes visuais.
+        """
         self.root.bind("<Up>", lambda _event: self._manual_action(Action.WALK))
         self.root.bind("<Left>", lambda _event: self._manual_action(Action.TURN_LEFT))
         self.root.bind("<Right>", lambda _event: self._manual_action(Action.TURN_RIGHT))
         self.root.bind("<space>", lambda _event: self._manual_action(Action.GRAB))
         self.root.bind("<Return>", lambda _event: self._step_once())
 
-    # ------------------------------------------------------------------
-    # Game lifecycle
-    # ------------------------------------------------------------------
-
     def _new_game(self, *, reuse_source: bool) -> None:
+        """Cria um novo jogo usando o mapa atual ou um aleatorio.
+
+        A funcao reinicializa ambiente, agente, contadores visuais e log,
+        tentando manter a experiencia da GUI o mais proxima possivel do fluxo
+        da linha de comando.
+        """
         self._stop()
         try:
             grid, start, direction, source_name = self._load_grid(reuse_source=reuse_source)
@@ -305,6 +333,11 @@ class PitfallGUI:
         self._refresh()
 
     def _load_grid(self, *, reuse_source: bool) -> tuple[Grid, tuple[int, int], Direction, str]:
+        """Carrega o mapa atual ou gera um novo tabuleiro aleatorio.
+
+        O retorno inclui o grid e tambem os metadados basicos usados para
+        iniciar o ambiente, como posicao inicial e direcao.
+        """
         if self.map_path is not None and reuse_source:
             grid, meta = load_map_from_file(self.map_path)
             start = tuple(meta.get("start", START_POS))
@@ -319,14 +352,27 @@ class PitfallGUI:
         return grid, START_POS, Direction.EAST, "aleatorio"
 
     def _reset_game(self) -> None:
+        """Reinicia o jogo preservando a mesma fonte de mapa.
+
+        E o equivalente visual de repetir a mesma configuracao de execucao.
+        """
         self._new_game(reuse_source=True)
 
     def _new_random_game(self) -> None:
+        """Gera um novo jogo com mapa aleatorio.
+
+        Uma nova seed e criada para produzir outro tabuleiro.
+        """
         self.map_path = None
         self.current_seed = random.randrange(1, 1_000_000)
         self._new_game(reuse_source=False)
 
     def _choose_map(self) -> None:
+        """Abre o seletor de arquivos para trocar o mapa.
+
+        Depois de escolher o arquivo, a interface reinicia o jogo usando esse
+        novo mapa.
+        """
         path = filedialog.askopenfilename(
             title="Carregar mapa",
             filetypes=(
@@ -342,11 +388,12 @@ class PitfallGUI:
         self.map_path = Path(path)
         self._new_game(reuse_source=True)
 
-    # ------------------------------------------------------------------
-    # Game stepping
-    # ------------------------------------------------------------------
-
     def _step_once(self) -> None:
+        """Executa um turno automatico do agente.
+
+        Esse e o fluxo usado tanto no modo passo a passo quanto na execucao
+        continua da GUI.
+        """
         if self.env is None or self.agent is None:
             return
         if self.env.game_over or self.turn >= self.config.max_steps:
@@ -359,6 +406,11 @@ class PitfallGUI:
         self._apply_action(action, source="agente")
 
     def _manual_action(self, action: Action) -> None:
+        """Executa uma acao manual sem usar a decisao do agente.
+
+        E util para demonstracao, depuracao e comparacao entre a estrategia do
+        usuario e a estrategia automatica.
+        """
         self._stop()
         if self.env is None or self.agent is None:
             return
@@ -369,6 +421,11 @@ class PitfallGUI:
         self._apply_action(action, source="manual")
 
     def _apply_action(self, action: Action, *, source: str) -> None:
+        """Aplica a acao escolhida e atualiza log e interface.
+
+        Toda mudanca visual do turno passa por aqui: resultado da acao, itens
+        coletados, deltas de score e energia, historico e repintura da tela.
+        """
         if self.env is None or self.agent is None:
             return
         result = self.env.step(action)
@@ -377,9 +434,6 @@ class PitfallGUI:
         if result.picked:
             self.agent.notify_picked(result.picked)
 
-        # Atualiza apenas a string de percepcao para display; o observe() completo
-        # e' feito no inicio do proximo _step_once (igual ao CLI), evitando apagar
-        # o pending mid-turno e mantendo o timing identico entre GUI e CLI.
         self.last_percepts = str(result.percept)
 
         self.last_action = action.value
@@ -398,6 +452,11 @@ class PitfallGUI:
             self._stop()
 
     def _observe_current(self) -> None:
+        """Sincroniza a percepcao atual da GUI com o agente.
+
+        A interface observa o ambiente primeiro e so depois deixa o agente
+        decidir, preservando a mesma ordem logica usada no modo CLI.
+        """
         if self.env is None or self.agent is None:
             return
         percept = self.env.get_percept()
@@ -411,6 +470,11 @@ class PitfallGUI:
         )
 
     def _toggle_run(self) -> None:
+        """Alterna entre execucao continua e pausa.
+
+        O objetivo e deixar clara a diferenca entre acompanhar o agente passo a
+        passo e deixar a simulacao seguir sozinha.
+        """
         if self.running:
             self._stop()
             return
@@ -419,6 +483,11 @@ class PitfallGUI:
         self._run_next()
 
     def _run_next(self) -> None:
+        """Agenda o proximo passo automatico da interface.
+
+        Enquanto a GUI estiver em modo de execucao, esse metodo reprograma a si
+        mesmo usando o temporizador do Tkinter.
+        """
         if not self.running:
             return
         self._step_once()
@@ -427,6 +496,11 @@ class PitfallGUI:
             self.after_id = self.root.after(delay_ms, self._run_next)
 
     def _stop(self) -> None:
+        """Interrompe a execucao automatica em andamento.
+
+        Tambem limpa qualquer callback pendente do Tkinter para evitar que a
+        interface continue rodando em segundo plano.
+        """
         self.running = False
         if hasattr(self, "run_button"):
             self.run_button.configure(text="Executar")
@@ -437,15 +511,21 @@ class PitfallGUI:
                 pass
             self.after_id = None
 
-    # ------------------------------------------------------------------
-    # Rendering
-    # ------------------------------------------------------------------
-
     def _refresh(self) -> None:
+        """Atualiza tabuleiro e painel lateral.
+
+        Centralizar essa chamada ajuda a manter a GUI consistente depois de
+        cada turno.
+        """
         self._draw_board()
         self._draw_status()
 
     def _draw_board(self) -> None:
+        """Redesenha o tabuleiro com mapa real ou conhecimento da KB.
+
+        O modo visual depende da opcao "Revelar mapa real". Quando ela esta
+        desativada, o canvas mostra apenas aquilo que o agente conhece.
+        """
         if self.env is None or self.agent is None:
             return
         self.canvas.delete("all")
@@ -506,6 +586,11 @@ class PitfallGUI:
         confirmed_tele: set[tuple[int, int]],
         gold_seen: set[tuple[int, int]],
     ) -> None:
+        """Desenha uma unica celula do tabuleiro.
+
+        A aparencia muda conforme a fonte de informacao: mapa real, celula
+        visitada, fronteira segura, risco suspeito ou perigo confirmado.
+        """
         r, c = pos
         x0 = (c - 1) * CELL_SIZE
         y0 = (r - 1) * CELL_SIZE
@@ -557,6 +642,11 @@ class PitfallGUI:
         self.canvas.create_rectangle(x0, y0, x1, y1, outline="#253128")
 
     def _draw_image(self, key: str, pos: tuple[int, int]) -> None:
+        """Desenha uma imagem na celula indicada.
+
+        Se a imagem nao existir, a GUI usa um retangulo simples para manter a
+        tela funcional.
+        """
         r, c = pos
         x = (c - 1) * CELL_SIZE
         y = (r - 1) * CELL_SIZE
@@ -568,6 +658,11 @@ class PitfallGUI:
         self.canvas.create_image(x, y, image=img, anchor="nw")
 
     def _draw_status(self) -> None:
+        """Atualiza os textos do painel de estado.
+
+        Esse painel resume a situacao do jogo de forma compacta para facilitar
+        apresentacoes e acompanhamento da execucao.
+        """
         if self.env is None or self.agent is None:
             return
         source = self.map_path.name if self.map_path is not None else "aleatorio"
@@ -591,6 +686,11 @@ class PitfallGUI:
             self.status_vars[key].set(value)
 
     def _status_message(self) -> str:
+        """Escolhe a mensagem principal mostrada no status.
+
+        A funcao prioriza estados finais e, nos demais casos, mostra o evento
+        mais recente do turno.
+        """
         if self.env is None:
             return self.last_message
         if self.env.escaped:
@@ -602,6 +702,11 @@ class PitfallGUI:
         return self.last_message
 
     def _append_log(self, msg: str) -> None:
+        """Adiciona uma linha ao historico da interface.
+
+        O historico serve como trilha de execucao para explicar o que o agente
+        fez e por que os valores atuais mudaram.
+        """
         if not hasattr(self, "log"):
             return
         self.log.configure(state="normal")
@@ -610,11 +715,21 @@ class PitfallGUI:
         self.log.configure(state="disabled")
 
     def _on_close(self) -> None:
+        """Fecha a janela com seguranca.
+
+        Antes de destruir a interface, a execucao automatica e interrompida
+        para evitar callbacks pendentes.
+        """
         self._stop()
         self.root.destroy()
 
 
 def _resize_photo(photo: tk.PhotoImage, target: int) -> tk.PhotoImage:
+    """Redimensiona uma imagem para o tamanho da celula.
+
+    O calculo usa `zoom` e `subsample` para manter compatibilidade com o
+    `PhotoImage` do Tkinter sem depender de bibliotecas externas.
+    """
     gcd_w = math.gcd(photo.width(), target)
     gcd_h = math.gcd(photo.height(), target)
     zoom_x = target // gcd_w
@@ -625,6 +740,10 @@ def _resize_photo(photo: tk.PhotoImage, target: int) -> tk.PhotoImage:
 
 
 def _cell_image_key(cell: CellType) -> str:
+    """Converte um tipo de celula para a chave da imagem.
+
+    Isso desacopla a logica do tabuleiro dos nomes concretos dos arquivos.
+    """
     return {
         CellType.EMPTY: "floor",
         CellType.PIT: "pit",
@@ -637,6 +756,10 @@ def _cell_image_key(cell: CellType) -> str:
 
 
 def _player_image_key(direction: Direction) -> str:
+    """Converte uma direcao na imagem correta do jogador.
+
+    Mantem a representacao visual coerente com a orientacao atual do agente.
+    """
     return {
         Direction.NORTH: "player_north",
         Direction.EAST: "player_east",
@@ -654,6 +777,11 @@ def launch_gui(
     max_steps: int = 400,
     delay: float = 0.25,
 ) -> None:
+    """Cria a GUI com a configuracao informada e inicia a janela.
+
+    Essa funcao existe como ponto de entrada simples para o restante do
+    projeto, escondendo os detalhes de construcao da classe principal.
+    """
     config = GuiConfig(
         map_path=map_path,
         seed=seed,

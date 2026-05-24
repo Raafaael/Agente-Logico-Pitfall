@@ -24,6 +24,13 @@ from .types import (
 
 @dataclass
 class AgentState:
+    """Guarda o estado local usado pelo agente durante o jogo.
+
+    Esta estrutura concentra tudo o que o agente precisa acompanhar entre um
+    turno e outro: posicao, orientacao, energia observada, score, fila de
+    acoes pendentes e pequenas memorias auxiliares usadas para evitar riscos
+    repetidos.
+    """
     pos: Position = START_POS
     direction: Direction = Direction.EAST
     energy: int = INITIAL_ENERGY
@@ -34,18 +41,18 @@ class AgentState:
     last_decision: Optional[tuple[str, Optional[Position]]] = None
     last_message: str = ""
     pending: deque[Action] = field(default_factory=deque)
-    returning_to_exit: bool = False  # True: comprometido com retorno ate a saida
+    returning_to_exit: bool = False
     damaging_cells: dict[Position, int] = field(default_factory=dict)
     blocked_cells: set[Position] = field(default_factory=set)
 
 
 class Agent:
-    """Picks the next action using only its own knowledge base.
+    """Decide a proxima acao usando apenas o que a KB conhece.
 
-    Importantly, the agent never reads the environment's grid: it only sees
-    percepts and the position/direction values it tracks itself. The latter
-    are first-class outputs of the agent's actions, so they do not leak the
-    map.
+    O agente nao consulta o mapa real do ambiente. Ele trabalha somente com as
+    percepcoes recebidas, o estado interno que ja construiu e as inferencias da
+    base de conhecimento. Isso deixa a solucao alinhada ao enunciado e ajuda a
+    separar claramente exploracao, planejamento e simulacao do mundo.
     """
 
     def __init__(
@@ -69,10 +76,22 @@ class Agent:
 
     @property
     def backend(self) -> str:
+        """Informa qual backend de conhecimento esta em uso.
+
+        Essa informacao aparece principalmente na interface e nos resultados
+        finais, facilitando a comparacao entre Python e SWI-Prolog.
+        """
         return getattr(self.kb, "backend", "unknown")
 
     def observe(self, percept: Percept, pos: Position, direction: Direction,
                 energy: int, score: int) -> None:
+        """Atualiza o estado interno com a percepcao do turno.
+
+        Aqui o agente sincroniza o que acabou de observar com sua KB e registra
+        efeitos importantes, como dano recebido ao entrar em uma celula. Ao
+        final, qualquer plano antigo e descartado para evitar que uma rota
+        desatualizada conduza o agente a um risco recem-descoberto.
+        """
         previous_energy = self.state.energy
         self.state.pos = pos
         self.state.direction = direction
@@ -94,11 +113,14 @@ class Agent:
                 previous_energy - energy,
             )
 
-        # Always replan from scratch each turn: a stale path queue could
-        # send the agent into a cell we just learned to be risky.
         self.state.pending.clear()
 
     def notify_picked(self, kind: str) -> None:
+        """Sincroniza a KB quando ouro ou powerup sao coletados.
+
+        Essa etapa evita que a base de conhecimento continue perseguindo itens
+        que ja sairam do mapa.
+        """
         if kind == "gold":
             self.state.gold_carried += 1
             self.kb.mark_gold_taken(self.state.pos)
@@ -106,58 +128,51 @@ class Agent:
             self.kb.mark_powerup_taken(self.state.pos)
 
     def decide_action(self) -> Action:
+        """Calcula e registra a acao escolhida para o turno.
+
+        O metodo publico e curto de proposito: ele delega a logica principal
+        para `_decide()` e apenas registra a ultima acao escolhida.
+        """
         action = self._decide()
         self.state.last_action = action
         return action
 
     def _decide(self) -> Action:
+        """Organiza a prioridade entre coleta, retorno e exploracao.
+
+        A ordem aqui foi pensada para ficar facil de explicar:
+        1. consumir a fila de acoes ja planejadas;
+        2. pegar item da celula atual sempre que houver;
+        3. reagir a impacto ou situacoes especiais;
+        4. voltar para a saida quando isso ja faz mais sentido;
+        5. consultar a KB para seguir explorando.
+        """
         if self.state.pending:
             return self.state.pending.popleft()
-
-        # Pegar ouro/powerup imediatamente se o agente estiver na célula.
-        # Tem prioridade sobre qualquer modo (inclusive returning_to_exit) para
-        # garantir que o agente nunca passe por ouro/powerup sem pegar.
         if (self.state.last_percept is not None
                 and (self.state.last_percept.glow or self.state.last_percept.powerup)):
             return Action.GRAB
-
-        # Guard: se o ultimo WALK bateu em parede, girar para replanjar
-        # (o planejador A* nunca deveria gerar isso, mas cobre casos extremos)
         if (self.state.last_percept is not None
                 and self.state.last_percept.impact
                 and self.state.last_action == Action.WALK):
             return Action.TURN_RIGHT
-
-        # Ativar retorno quando coletou todos os ouros
         if self.state.gold_carried >= GOLD_TARGET:
             self.state.returning_to_exit = True
-
-        # ----------------------------------------------------------------
-        # Modo retorno: uma vez comprometido, segue ate a saida sem oscilar.
-        # Durante o retorno verifica desvios viaveis para aproveitar energia
-        # restante (celulas seguras nao visitadas no caminho de volta).
-        # ----------------------------------------------------------------
         if self.state.returning_to_exit:
             if self.state.pos == self.exit_pos:
                 if self.state.gold_carried >= GOLD_TARGET:
                     self.state.returning_to_exit = False
                     self.state.last_decision = ("sair", None)
                     return Action.EXIT
-                # Ouro parcial: tentar desvio acessivel antes de sair
                 detour = self._best_return_detour()
                 if detour is not None:
-                    # Permanece em modo retorno — desvio no caminho de volta
                     action = self._move_toward(detour)
                     if action is not None:
                         self.state.last_decision = ("desvio_retorno", detour)
                         return action
-                # Sem desvio viavel na saida: sair imediatamente para preservar
-                # a pontuacao atual. _enough_energy_to_return() e' trivialmente
-                # True aqui (pos==exit_pos), entao nunca deve ser consultado.
                 self.state.last_decision = ("sair_energia", None)
                 return Action.EXIT
             else:
-                # Fora da saida: verificar desvio antes de ir diretamente
                 if self.state.gold_carried < GOLD_TARGET:
                     detour = self._best_return_detour()
                     if detour is not None:
@@ -169,12 +184,7 @@ class Agent:
                 if action is not None:
                     self.state.last_decision = ("retornar", self.exit_pos)
                     return action
-                self.state.returning_to_exit = False  # sem caminho, tenta KB
-
-        # ----------------------------------------------------------------
-        # Verificacao proativa: ativa retorno antes de nao ter energia suficiente.
-        # Flag permanece True ate chegar na saida (sem oscilacao).
-        # ----------------------------------------------------------------
+                self.state.returning_to_exit = False
         if not self.state.returning_to_exit and not self._enough_energy_to_return():
             self.state.returning_to_exit = True
             self.state.last_decision = ("retornar_energia", self.exit_pos)
@@ -183,10 +193,6 @@ class Agent:
             action = self._move_toward(self.exit_pos)
             if action is not None:
                 return action
-
-        # ----------------------------------------------------------------
-        # Decisao normal via KB
-        # ----------------------------------------------------------------
         kind, target = self.kb.decide()
         self.state.last_decision = (kind, target)
 
@@ -219,6 +225,12 @@ class Agent:
         return Action.EXIT
 
     def _move_toward(self, target: Position) -> Optional[Action]:
+        """Transforma uma meta em acoes de curto prazo.
+
+        Primeiro o agente planeja um caminho. Em seguida, antes de executar,
+        ele ainda faz uma ultima verificacao local para evitar avancar
+        diretamente para uma celula que acabou de parecer arriscada.
+        """
         actions = self._plan_path(target)
         if actions and actions[0] == Action.WALK and self.state.last_percept:
             forward = self._forward_pos()
@@ -246,6 +258,12 @@ class Agent:
         return self.state.pending.popleft()
 
     def _plan_path(self, goal: Position) -> list[Action]:
+        """Planeja um caminho seguro ate a meta.
+
+        O planejamento principal evita celulas perigosas, bloqueadas ou
+        marcadas como dano forte. Se isso falhar, a funcao ainda tenta uma
+        segunda busca mais permissiva para nao travar o agente desnecessariamente.
+        """
         def walkable(p: Position) -> bool:
             return self._is_walkable(p)
 
@@ -257,14 +275,11 @@ class Agent:
         return path_to_actions(path, self.state.direction)
 
     def _enough_energy_to_return(self) -> bool:
-        """True se ha energia para pelo menos 1 passo de exploracao E o retorno completo.
+        """Verifica se ainda vale explorar antes de retornar.
 
-        Buffer de +6: aciona retorno quando energy <= sth + 6.
-        - +5 absorve saltos bruscos do A* (pode crescer ate +3 por passo)
-        - +1 extra garante que ao chegar na saida sobra energia para desvios
-          de 1 passo (custo ~5) via _best_return_detour.
-        Com energia menor que buffer+1 ao chegar seria possivel fazer o desvio
-        mas nao garantido; o +1 elimina esse risco.
+        A ideia nao e prever o futuro com exatidao absoluta, mas manter uma
+        margem conservadora para que o agente nao se comprometa com exploracoes
+        longas quando ja esta perto do limite de retorno seguro.
         """
         if self.state.pos == self.exit_pos:
             return True
@@ -278,6 +293,12 @@ class Agent:
         return self.state.energy > steps_home + 1
 
     def _choose_target(self, proposed: Position) -> Position:
+        """Ajusta a meta da KB quando existe uma alternativa melhor.
+
+        A KB escolhe uma meta plausivel, mas o agente ainda pode refinar essa
+        escolha com heuristicas de custo, bloqueios temporarios e prioridades
+        de coleta.
+        """
         snapshot = self.kb.snapshot()
         priority = set(map(tuple, snapshot.get("gold_seen", [])))
         if self.state.energy <= INITIAL_ENERGY // 2:
@@ -299,12 +320,16 @@ class Agent:
                 and self.state.energy > INITIAL_ENERGY // 8
             ):
                 return self._late_gold_frontier() or proposed
-            # Trust KB's nearest-first proposal: systematic BFS coverage avoids
-            # info_gain bias that deprioritises corner/border cells (e.g. (1,1)).
             return proposed
         return self._best_exploration_target(snapshot, include_risky=True) or proposed
 
     def _late_gold_frontier(self) -> Optional[Position]:
+        """Escolhe a fronteira segura mais barata no fim da exploracao.
+
+        Quando o agente ja esta perto de completar a coleta, vale simplificar a
+        decisao e priorizar caminhos curtos para terminar o mapa com menos
+        desperdicio de movimentos.
+        """
         best: Optional[Position] = None
         best_cost = float("inf")
         for cell in self.kb.safe_unvisited_frontier():
@@ -327,6 +352,15 @@ class Agent:
         include_risky: bool = True,
         banned: Optional[set[Position]] = None,
     ) -> Optional[Position]:
+        """Compara fronteiras por ganho de informacao, custo e risco.
+
+        Esta e a heuristica mais rica do agente. Ela combina:
+        - o quanto a celula pode revelar do mapa;
+        - o custo para chegar ate ela;
+        - a distancia em relacao a saida;
+        - o risco estimado a partir da KB;
+        - o efeito esperado sobre a energia restante.
+        """
         snapshot = snapshot or self.kb.snapshot()
         banned = banned or set()
         safe_frontier = set(map(tuple, self.kb.safe_unvisited_frontier()))
@@ -363,8 +397,6 @@ class Agent:
             exit_distance = self._distance_from_exit(cell)
             energy_margin = self._energy_margin_after(cell, travel_cost)
 
-            # Base: information gain weighted strongly, travel penalised.
-            # exit_distance kept small (1x) — avoid biasing too far from exit.
             score = info_gain * 16 + exit_distance - travel_cost * 3 - risk
             if cell in gold_seen:
                 score += 2000
@@ -381,12 +413,16 @@ class Agent:
                 best_score = score
                 best = cell
 
-        # Negative utility means the only candidates are probably bad risks.
         if best_score < -250 and not banned:
             return None
         return best
 
     def _risk_penalty(self, pos: Position, snapshot: dict) -> int:
+        """Traduz os sinais da KB em uma penalidade numerica.
+
+        O objetivo nao e modelar probabilidade exata, e sim transformar a
+        intuicao de risco em um numero comparavel dentro da heuristica.
+        """
         if pos in set(map(tuple, snapshot.get("confirmed_pit", []))):
             return 10_000
         penalty = 0
@@ -403,6 +439,11 @@ class Agent:
         return penalty
 
     def _information_gain(self, pos: Position, snapshot: dict) -> int:
+        """Estimativa simples de quanto uma celula pode revelar.
+
+        Quanto mais vizinhos desconhecidos ou pouco explicados a celula tiver,
+        maior tende a ser o ganho de informacao ao visita-la.
+        """
         visited = set(map(tuple, snapshot.get("visited", [])))
         safe = set(map(tuple, snapshot.get("safe", [])))
         gain = 0
@@ -414,15 +455,24 @@ class Agent:
         return gain
 
     def _distance_from_exit(self, pos: Position) -> int:
+        """Calcula a distancia Manhattan ate a saida.
+
+        Esse valor ajuda a evitar exploracoes que empurrem o agente para longe
+        demais quando o retorno ja comeca a importar.
+        """
         return abs(pos[0] - self.exit_pos[0]) + abs(pos[1] - self.exit_pos[1])
 
     def _energy_margin_after(self, target: Position, travel_cost: int) -> int:
-        from .planner import path_to_actions
+        """Estima quanta energia sobraria apos visitar a meta e voltar.
+
+        O calculo considera o custo de ida ate a meta e uma aproximacao do
+        retorno ate a saida. Isso ajuda a penalizar destinos que parecem bons,
+        mas deixam o agente em uma situacao apertada depois.
+        """
         path_home = astar(target, self.exit_pos, self._is_walkable, size=self.size)
         if path_home is None:
             home_cost = self._distance_from_exit(target) * 2 + 5
         else:
-            # Estimate turns: count direction changes in the A* path + 2 buffer
             home_walks = max(0, len(path_home) - 1)
             direction_changes = sum(
                 1 for i in range(1, len(path_home) - 1)
@@ -433,6 +483,12 @@ class Agent:
         return self.state.energy - travel_cost - home_cost
 
     def _is_walkable(self, pos: Position) -> bool:
+        """Filtra celulas seguras e evita riscos repetidos.
+
+        Mesmo que a KB considere uma celula tecnicamente acessivel, o agente
+        pode recusá-la se ela tiver causado dano relevante ou se tiver sido
+        bloqueada temporariamente por um contexto de risco recente.
+        """
         damage = self.state.damaging_cells.get(pos, 0)
         if damage >= 40:
             return False
@@ -443,20 +499,28 @@ class Agent:
         return self.kb.likely_safe(pos)
 
     def _forward_pos(self) -> Position:
+        """Retorna a celula logo a frente do agente.
+
+        Esse helper simplifica verificacoes locais antes do proximo WALK.
+        """
         dr, dc = self.state.direction.delta
         return self.state.pos[0] + dr, self.state.pos[1] + dc
 
     def _neighbor_in_direction(self, direction: Direction) -> Position:
+        """Retorna o vizinho ortogonal para uma direcao dada.
+
+        E usado em pequenos ajustes taticos, como virar antes de entrar em uma
+        celula recem-marcada como suspeita.
+        """
         dr, dc = direction.delta
         return self.state.pos[0] + dr, self.state.pos[1] + dc
 
     def _best_return_detour(self) -> Optional[Position]:
-        """Encontra a celula segura nao visitada mais proxima que pode ser visitada
-        enquanto retorna, sem comprometer a chegada na saida com energia >= 1.
+        """Procura um pequeno desvio seguro durante o retorno.
 
-        Estimativa conservadora do retorno: walks_home * 2 + 1
-        (pior caso: 1 giro por caminhada + 1 alinhamento inicial).
-        Condicao: energy > steps_to_cell + est_return  (chega na saida com >= 1 de energia).
+        Em vez de voltar sempre em linha reta, o agente tenta aproveitar o
+        caminho para visitar uma sala segura e ainda nao explorada, desde que
+        isso nao comprometa a chegada na saida com folga suficiente.
         """
         from .planner import astar
 
@@ -468,7 +532,7 @@ class Agent:
             return self._is_walkable(p)
 
         best: Optional[Position] = None
-        best_total = self.state.energy  # so aceita se total < energy (strict)
+        best_total = self.state.energy
 
         for cell in frontier:
             path_there = self._plan_path(cell)
@@ -480,7 +544,6 @@ class Agent:
             if path_home is None:
                 continue
             walks_home = max(0, len(path_home) - 1)
-            # Estimate: walks + direction changes in path + 2 buffer
             direction_changes = sum(
                 1 for i in range(1, len(path_home) - 1)
                 if (path_home[i][0] - path_home[i-1][0], path_home[i][1] - path_home[i-1][1])
@@ -489,7 +552,6 @@ class Agent:
             est_return = walks_home + direction_changes + 2
 
             total = steps_to_cell + est_return
-            # Acessivel se sobra pelo menos 1 de energia ao chegar na saida
             if self.state.energy > total and total < best_total:
                 best_total = total
                 best = cell
@@ -497,8 +559,11 @@ class Agent:
         return best
 
     def _fallback_action(self, target: Position) -> Optional[Action]:
-        from .types import orthogonal_neighbors
+        """Usa um movimento direto quando o plano completo falha.
 
+        Esse fallback cobre casos pequenos em que o A* nao montou um plano
+        completo, mas ainda existe um vizinho imediato que leva ao alvo.
+        """
         for nb in orthogonal_neighbors(self.state.pos, self.size):
             if nb == target and self._is_walkable(nb):
                 actions = path_to_actions([self.state.pos, nb], self.state.direction)
