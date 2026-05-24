@@ -17,6 +17,7 @@ from .types import (
     Position,
     POWERUP_ENERGY_GAIN,
     START_POS,
+    StepResult,
     in_bounds,
     orthogonal_neighbors,
 )
@@ -44,6 +45,8 @@ class AgentState:
     returning_to_exit: bool = False
     damaging_cells: dict[Position, int] = field(default_factory=dict)
     blocked_cells: set[Position] = field(default_factory=set)
+    teleporter_cells: set[Position] = field(default_factory=set)
+    unreachable_targets: set[Position] = field(default_factory=set)
 
 
 class Agent:
@@ -92,12 +95,15 @@ class Agent:
         final, qualquer plano antigo e descartado para evitar que uma rota
         desatualizada conduza o agente a um risco recem-descoberto.
         """
+        previous_pos = self.state.pos
         previous_energy = self.state.energy
         self.state.pos = pos
         self.state.direction = direction
         self.state.energy = energy
         self.state.score = score
         self.state.last_percept = percept
+        if pos != previous_pos:
+            self.state.unreachable_targets.clear()
 
         self.kb.set_agent_pos(pos)
         self.kb.set_agent_energy(energy)
@@ -126,6 +132,23 @@ class Agent:
             self.kb.mark_gold_taken(self.state.pos)
         elif kind == "powerup":
             self.kb.mark_powerup_taken(self.state.pos)
+
+    def notify_step_result(self, action: Action, result: StepResult) -> None:
+        """Aprende efeitos que so aparecem depois de executar uma acao.
+
+        O principal caso e teletransporte: a percepcao `flash` avisa que ha um
+        teletransporte adjacente, mas so o resultado da acao confirma qual
+        celula causou o salto. Bloquear essa origem evita que o planejador
+        reutilize a mesma casa e entre em ciclos aleatorios.
+        """
+        if action != Action.WALK or not result.teleported:
+            return
+        origins = result.teleported_from or [self._forward_pos()]
+        for origin in origins:
+            if in_bounds(origin, self.size):
+                self.state.teleporter_cells.add(origin)
+                self.state.blocked_cells.add(origin)
+        self.state.pending.clear()
 
     def decide_action(self) -> Action:
         """Calcula e registra a acao escolhida para o turno.
@@ -173,8 +196,8 @@ class Agent:
                     if action is not None:
                         self.state.last_decision = ("desvio_retorno", detour)
                         return action
-                self.state.last_decision = ("sair_energia", None)
-                return Action.EXIT
+                self.state.returning_to_exit = False
+                self.state.blocked_cells = set(self.state.teleporter_cells)
             else:
                 if self.state.gold_carried < GOLD_TARGET:
                     detour = self._best_return_detour()
@@ -187,6 +210,9 @@ class Agent:
                 if action is not None:
                     self.state.last_decision = ("retornar", self.exit_pos)
                     return action
+                if self.state.gold_carried >= GOLD_TARGET:
+                    self.state.last_decision = ("retornar_sem_rota", self.exit_pos)
+                    return Action.TURN_RIGHT
                 self.state.returning_to_exit = False
         if not self.state.returning_to_exit and not self._enough_energy_to_return():
             self.state.returning_to_exit = True
@@ -208,10 +234,13 @@ class Agent:
             action = self._move_toward(target)
             if action is not None:
                 return action
+            gold_seen = set(map(tuple, self.kb.snapshot().get("gold_seen", [])))
+            if target not in gold_seen:
+                self.state.unreachable_targets.add(target)
             alt = self._best_exploration_target(
                 self.kb.snapshot(),
                 include_risky=True,
-                banned=set(self.state.blocked_cells),
+                banned=set(self.state.blocked_cells) | set(self.state.unreachable_targets),
             )
             if alt is not None and alt != target:
                 action = self._move_toward(alt)
@@ -222,6 +251,11 @@ class Agent:
                 action = self._move_toward(self.exit_pos)
                 if action is not None:
                     self.state.last_decision = ("retornar_sem_rota", self.exit_pos)
+                    return action
+            if self.state.gold_carried < GOLD_TARGET:
+                action = self._safe_step_from_exit()
+                if action is not None:
+                    self.state.last_decision = ("retomar_exploracao", None)
                     return action
             return Action.TURN_RIGHT
 
@@ -237,7 +271,11 @@ class Agent:
         actions = self._plan_path(target)
         if actions and actions[0] == Action.WALK and self.state.last_percept:
             forward = self._forward_pos()
-            if self.state.last_percept.breeze and self.kb.is_risky(forward):
+            if (
+                target != self.exit_pos
+                and self.state.last_percept.breeze
+                and self.kb.is_risky(forward)
+            ):
                 self.state.blocked_cells.add(forward)
                 right = self._neighbor_in_direction(self.state.direction.turn_right())
                 if in_bounds(right, self.size) and right not in self.state.blocked_cells:
@@ -271,6 +309,8 @@ class Agent:
             return self._is_walkable(p)
 
         path = astar(self.state.pos, goal, walkable, size=self.size)
+        if path is None and goal == self.exit_pos and self.state.gold_carried >= GOLD_TARGET:
+            path = astar(self.state.pos, goal, self.kb.likely_safe, size=self.size)
         if path is None and self.state.damaging_cells:
             path = astar(self.state.pos, goal, self.kb.likely_safe, size=self.size)
         if path is None:
@@ -308,12 +348,21 @@ class Agent:
             priority |= set(map(tuple, snapshot.get("powerup_seen", [])))
         if proposed in priority:
             return proposed
+        if proposed in self.state.unreachable_targets:
+            return (
+                self._best_exploration_target(
+                    snapshot,
+                    include_risky=True,
+                    banned=set(self.state.blocked_cells) | set(self.state.unreachable_targets),
+                )
+                or proposed
+            )
         if proposed in self.state.blocked_cells:
             return (
                 self._best_exploration_target(
                     snapshot,
                     include_risky=True,
-                    banned=set(self.state.blocked_cells),
+                    banned=set(self.state.blocked_cells) | set(self.state.unreachable_targets),
                 )
                 or proposed
             )
@@ -379,6 +428,7 @@ class Agent:
         candidates |= gold_seen
         candidates.discard(self.state.pos)
         candidates -= banned
+        candidates -= self.state.unreachable_targets
 
         best: Optional[Position] = None
         best_score = float("-inf")
@@ -497,6 +547,8 @@ class Agent:
             return False
         if damage > 0 and self.state.energy <= damage + 30:
             return False
+        if pos in self.state.teleporter_cells:
+            return False
         if pos in self.state.blocked_cells:
             return False
         return self.kb.likely_safe(pos)
@@ -560,6 +612,18 @@ class Agent:
                 best = cell
 
         return best
+
+    def _safe_step_from_exit(self) -> Optional[Action]:
+        """Sai do portal quando ainda falta ouro e a meta atual nao tem rota."""
+        if self.state.pos != self.exit_pos:
+            return None
+        for nb in orthogonal_neighbors(self.state.pos, self.size):
+            if self._is_walkable(nb):
+                actions = path_to_actions([self.state.pos, nb], self.state.direction)
+                if actions:
+                    self.state.pending.extend(actions[1:])
+                    return actions[0]
+        return None
 
     def _fallback_action(self, target: Position) -> Optional[Action]:
         """Usa um movimento direto quando o plano completo falha.

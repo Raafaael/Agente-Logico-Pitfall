@@ -430,6 +430,7 @@ class PitfallGUI:
             return
         result = self.env.step(action)
         self.turn += 1
+        self.agent.notify_step_result(action, result)
 
         if result.picked:
             self.agent.notify_picked(result.picked)

@@ -163,6 +163,7 @@ class StepResult:
     alive: bool
     escaped: bool
     teleported: bool = False
+    teleported_from: list[Position] = field(default_factory=list)
     picked: str | None = None
     message: str = ""
 

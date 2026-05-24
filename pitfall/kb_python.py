@@ -282,7 +282,7 @@ class PythonKB:
         pos = self.agent_pos
         if pos in self.gold_seen:
             return "pegar", None
-        if pos in self.powerup_seen:
+        if pos in self.powerup_seen and self.agent_energy < INITIAL_ENERGY:
             return "pegar", None
         if pos == self.exit_pos and self.gold_carried >= GOLD_TARGET:
             return "sair", None

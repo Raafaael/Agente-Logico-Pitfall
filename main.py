@@ -130,6 +130,7 @@ def run_loop(env: Environment, agent: Agent, args) -> int:
         last_action_str = action.value
         last_picked = result.picked
         last_msg = result.message
+        agent.notify_step_result(action, result)
 
         if result.picked:
             agent.notify_picked(result.picked)

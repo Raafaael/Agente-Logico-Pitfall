@@ -63,8 +63,8 @@ class Environment:
         self._last_impact: bool = False
         self._last_scream: bool = False
         self._rng = rng or random.Random()
-        if get_cell(self._grid, start) != CellType.EMPTY:
-            raise ValueError("Starting cell must be EMPTY")
+        if get_cell(self._grid, start) not in (CellType.EMPTY, CellType.GOLD, CellType.POWERUP):
+            raise ValueError("Starting cell must be EMPTY, GOLD or POWERUP")
 
     @property
     def game_over(self) -> bool:
@@ -127,6 +127,7 @@ class Environment:
         score_delta = ACTION_COST
         energy_delta = 0
         teleported = False
+        teleported_from: list[Position] = []
         picked: Optional[str] = None
         message = ""
 
@@ -150,6 +151,7 @@ class Environment:
                 score_delta += event["score"]
                 energy_delta += event["energy"]
                 teleported = event["teleported"]
+                teleported_from = event["teleported_from"]
                 picked = event["picked"]
                 message = event["message"]
 
@@ -203,6 +205,7 @@ class Environment:
             alive=self.alive,
             escaped=self.escaped,
             teleported=teleported,
+            teleported_from=teleported_from,
             picked=picked,
             message=message,
         )
@@ -218,6 +221,7 @@ class Environment:
             "score": 0,
             "energy": 0,
             "teleported": False,
+            "teleported_from": [],
             "picked": None,
             "message": "",
         }
@@ -245,15 +249,23 @@ class Environment:
 
         if cell == CellType.TELEPORTER:
             result["teleported"] = True
+            result["teleported_from"].append(pos)
             if depth >= self.size * self.size:
                 result["message"] = "teletransporte em cadeia interrompido"
                 return result
-            destinations = [p for p in all_positions(self.size) if p != self.agent_pos]
+            destinations = [
+                p for p in all_positions(self.size)
+                if p != self.agent_pos
+                and get_cell(self._grid, p) in (CellType.EMPTY, CellType.GOLD, CellType.POWERUP)
+            ]
+            if not destinations:
+                destinations = [p for p in all_positions(self.size) if p != self.agent_pos]
             new_pos = self._rng.choice(destinations)
             self.agent_pos = new_pos
             inner = self._enter_cell(new_pos, depth + 1)
             result["score"] += inner["score"]
             result["energy"] += inner["energy"]
+            result["teleported_from"].extend(inner["teleported_from"])
             result["picked"] = inner["picked"]
             result["message"] = (
                 f"teleportado para {new_pos}; {inner['message']}".strip("; ")

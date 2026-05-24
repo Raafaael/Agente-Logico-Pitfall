@@ -148,12 +148,9 @@ def load_map_from_file(path: str | Path) -> tuple[Grid, dict]:
 def _load_prolog_map(text: str) -> tuple[Grid, dict]:
     """Parse a `tile(X, Y, 'Z').`-style map (the legacy reference format).
 
-    Legacy uses cartesian coordinates with Y=1 at the bottom and Y=12 at
-    the top, and the agent starts at `posicao(1, 1, norte)`. We translate
-    to our (row, col) layout (row 1 at top), so the legacy bottom-left
-    cell lands at our bottom-left visual corner, i.e. `(size, 1)`. The
-    returned `start` in metadata reflects this so the Environment is
-    initialised at the right location.
+    The provided `.pl` maps use `tile(X, Y, Symbol)`, where X is the column
+    from left to right and Y is the line from bottom to top. The project uses
+    `(row, col)` with row 1 at the top, so `tile(1, 12, ...)` becomes `(1, 1)`.
     """
     size_match = re.search(r"map_size\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)", text)
     size = int(size_match.group(1)) if size_match else GRID_SIZE
@@ -167,8 +164,8 @@ def _load_prolog_map(text: str) -> tuple[Grid, dict]:
         cell = CellType.from_symbol(sym if sym else ".")
         set_cell(grid, (row, col), cell)
 
-    legacy_start: Position = (size, 1)
-    validate_map(grid, legacy_start)
+    legacy_start: Position = (1, 1)
+    validate_map(grid, legacy_start, allow_start_items=True)
     return grid, {
         "start": legacy_start,
         "initial_direction": Direction.NORTH,
@@ -194,7 +191,12 @@ def _grid_from_strings(rows: Iterable[str], size: int) -> Grid:
     return grid
 
 
-def validate_map(grid: Grid, start: Position = START_POS) -> None:
+def validate_map(
+    grid: Grid,
+    start: Position = START_POS,
+    *,
+    allow_start_items: bool = False,
+) -> None:
     """Validate shape and start-cell invariants shared by all map formats."""
     if not grid:
         raise ValueError("Map cannot be empty")
@@ -204,7 +206,10 @@ def validate_map(grid: Grid, start: Position = START_POS) -> None:
             raise ValueError(f"Map must be square; row {i} has {len(row)} cells")
     if not (1 <= start[0] <= size and 1 <= start[1] <= size):
         raise ValueError(f"Start position out of bounds: {start}")
-    if get_cell(grid, start) != CellType.EMPTY:
+    allowed_start_cells = {CellType.EMPTY}
+    if allow_start_items:
+        allowed_start_cells.update({CellType.GOLD, CellType.POWERUP})
+    if get_cell(grid, start) not in allowed_start_cells:
         raise ValueError("Starting cell must be empty")
 
 
