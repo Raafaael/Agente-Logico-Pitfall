@@ -149,8 +149,11 @@ class Agent:
         """
         if self.state.pending:
             return self.state.pending.popleft()
+        if (self.state.last_percept is not None and self.state.last_percept.glow):
+            return Action.GRAB
         if (self.state.last_percept is not None
-                and (self.state.last_percept.glow or self.state.last_percept.powerup)):
+                and self.state.last_percept.powerup
+                and self.state.energy < INITIAL_ENERGY):
             return Action.GRAB
         if (self.state.last_percept is not None
                 and self.state.last_percept.impact

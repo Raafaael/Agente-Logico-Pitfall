@@ -162,11 +162,15 @@ class Environment:
                 picked = "gold"
                 message = f"ouro coletado (#{self.gold_collected})"
             elif cell == CellType.POWERUP:
-                set_cell(self._grid, self.agent_pos, CellType.EMPTY)
-                self.powerups_taken += 1
-                energy_delta += POWERUP_ENERGY_GAIN
-                picked = "powerup"
-                message = f"powerup: +{POWERUP_ENERGY_GAIN} energia"
+                actual_gain = min(POWERUP_ENERGY_GAIN, INITIAL_ENERGY - self.energy)
+                if actual_gain > 0:
+                    set_cell(self._grid, self.agent_pos, CellType.EMPTY)
+                    self.powerups_taken += 1
+                    energy_delta += actual_gain
+                    picked = "powerup"
+                    message = f"powerup: +{actual_gain} energia"
+                else:
+                    message = "powerup ignorado: energia cheia"
             else:
                 message = "nada para pegar"
 

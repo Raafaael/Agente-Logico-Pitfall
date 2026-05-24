@@ -240,10 +240,12 @@ decide(pegar) :-
     agent_pos(Pos),
     gold_seen(Pos), !.
 
-% 2. Powerup no local: coletar sempre que encontrado
+% 2. Powerup no local: coletar somente se tiver sofrido dano (energia < 100)
 decide(pegar) :-
     agent_pos(Pos),
-    powerup_seen(Pos), !.
+    powerup_seen(Pos),
+    agent_energy(E),
+    E < 100, !.
 
 % 3. Saida com todos os ouros
 decide(sair) :-
