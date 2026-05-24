@@ -16,7 +16,6 @@ from .types import (
     LOW_ENERGY_RETURN,
     Percept,
     Position,
-    REQUIRED_GOLD,
     START_POS,
     in_bounds,
 )
@@ -164,7 +163,10 @@ class Agent:
         if self.state.pending:
             return self.state.pending.popleft()
 
-        if self.state.gold_carried >= REQUIRED_GOLD:
+        kind, target = self.kb.decide()
+        self.state.last_decision = (kind, target)
+
+        if self._should_force_energy_retreat(kind, target):
             if self.state.pos == self.exit_pos:
                 self.state.last_decision = ("sair", None)
                 return Action.EXIT
@@ -172,31 +174,11 @@ class Agent:
             if action is not None:
                 self.state.last_decision = ("mover", self.exit_pos)
                 return action
-            fallback = self._last_resort_risk_action() or self._survival_action()
-            if fallback is not None:
-                return fallback
-
-        kind, target = self.kb.decide()
-        self.state.last_decision = (kind, target)
-
-        if self._should_force_energy_retreat(kind, target):
-            if self.state.pos == self.exit_pos:
-                if self.state.gold_carried >= REQUIRED_GOLD:
-                    self.state.last_decision = ("sair", None)
-                    return Action.EXIT
-            else:
-                action = self._move_toward(self.exit_pos)
-                if action is not None:
-                    self.state.last_decision = ("mover", self.exit_pos)
-                    return action
 
         if kind == "pegar":
             return Action.GRAB
         if kind == "sair":
-            if (
-                self.state.pos == self.exit_pos
-                and self.state.gold_carried >= REQUIRED_GOLD
-            ):
+            if self.state.pos == self.exit_pos:
                 return Action.EXIT
             fallback = self._last_resort_risk_action() or self._survival_action()
             if fallback is not None:
@@ -215,15 +197,10 @@ class Agent:
                 if fallback is not None:
                     return fallback
             if self.state.pos == self.exit_pos:
-                if self.state.gold_carried >= REQUIRED_GOLD:
-                    return Action.EXIT
-                return Action.TURN_RIGHT
+                return Action.EXIT
             return Action.TURN_RIGHT
 
-        if (
-            self.state.pos == self.exit_pos
-            and self.state.gold_carried >= REQUIRED_GOLD
-        ):
+        if self.state.pos == self.exit_pos:
             return Action.EXIT
         return Action.TURN_RIGHT
 
@@ -236,8 +213,6 @@ class Agent:
         if kind != "mover" or target is None or target == self.exit_pos:
             return False
         if self.kb.likely_safe(target):
-            return False
-        if self.state.gold_carried < REQUIRED_GOLD:
             return False
         if self.state.energy <= CRITICAL_ENERGY_RETURN:
             return True
@@ -253,10 +228,7 @@ class Agent:
             actions = self._plan_path(target, allow_hostile_retrace=True)
         if not actions:
             if target == self.state.pos:
-                if (
-                    self.state.pos == self.exit_pos
-                    and self.state.gold_carried >= REQUIRED_GOLD
-                ):
+                if self.state.pos == self.exit_pos:
                     return Action.EXIT
                 return None
             fallback = self._fallback_action(target)
@@ -407,9 +379,7 @@ class Agent:
 
         if target in confirmed_pit or target in confirmed_tele:
             return False
-        if self.state.gold_carried >= REQUIRED_GOLD and (
-            target in risk_pit or target in risk_tele
-        ):
+        if self.state.gold_carried > 0 and (target in risk_pit or target in risk_tele):
             return False
         return True
 

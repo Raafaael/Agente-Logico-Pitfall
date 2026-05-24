@@ -39,10 +39,6 @@
 :- dynamic exit_pos/1.
 
 grid_size(12).
-target_gold(3).
-total_pits(8).
-total_enemies(4).
-total_teleports(4).
 low_energy_threshold(60).
 critical_energy_threshold(25).
 
@@ -161,12 +157,6 @@ infer_one_hazard :-
     infer_kind(steps_at, enemy_clear, risk_enemy, confirmed_enemy).
 infer_one_hazard :-
     infer_kind(flash_at, tele_clear, risk_teleport, confirmed_teleport).
-infer_one_hazard :-
-    apply_count_limit(confirmed_pit, pit_clear, risk_pit, total_pits).
-infer_one_hazard :-
-    apply_count_limit(confirmed_enemy, enemy_clear, risk_enemy, total_enemies).
-infer_one_hazard :-
-    apply_count_limit(confirmed_teleport, tele_clear, risk_teleport, total_teleports).
 
 infer_kind(SensePred, ClearPred, RiskPred, ConfirmPred) :-
     Sense =.. [SensePred, Source],
@@ -202,29 +192,6 @@ hazard_candidate(P, ClearPred, ConfirmPred) :-
     -> Confirm =.. [ConfirmPred, P], call(Confirm)
     ;  true
     ).
-
-apply_count_limit(ConfirmPred, ClearPred, RiskPred, TotalPred) :-
-    TotalCall =.. [TotalPred, Total],
-    call(TotalCall),
-    findall(P, (Confirm =.. [ConfirmPred, P], call(Confirm)), RawConfirmed),
-    list_to_set(RawConfirmed, Confirmed),
-    length(Confirmed, Count),
-    Count >= Total,
-    findall(P,
-            ( valid_pos(P),
-              \+ member(P, Confirmed),
-              Clear =.. [ClearPred, P],
-              Risk =.. [RiskPred, P],
-              ( \+ call(Clear) ; call(Risk) )
-            ),
-            ToClear),
-    ToClear \= [],
-    forall(member(P, ToClear),
-           ( ClearGoal =.. [ClearPred, P],
-             assert_unique(ClearGoal),
-             RiskGoal =.. [RiskPred, P],
-             retractall(RiskGoal)
-           )).
 
 confirmed_any(P) :- confirmed_pit(P), !.
 confirmed_any(P) :- confirmed_enemy(P), !.
@@ -420,15 +387,7 @@ decide(pegar) :-
     low_energy_threshold(Low),
     E =< Low, !.
 
-% 3) At the exit with the required gold -> escape.
-decide(sair) :-
-    agent_pos(Pos),
-    exit_pos(Pos),
-    gold_carried(N),
-    target_gold(T),
-    N >= T, !.
-
-% 4) Known gold reachable through safe cells -> go grab it.
+% 3) Known gold reachable through safe cells -> go grab it.
 decide(mover(Target)) :-
     agent_pos(Pos),
     findall(D-T,
@@ -441,7 +400,7 @@ decide(mover(Target)) :-
     Cands \= [],
     keysort(Cands, [_-Target|_]), !.
 
-% 5) Energy low + known reachable powerup -> stock up before exploring more.
+% 4) Energy low + known reachable powerup -> stock up before exploring more.
 decide(mover(Target)) :-
     agent_pos(Pos),
     agent_energy(E),
@@ -457,25 +416,8 @@ decide(mover(Target)) :-
     Cands \= [],
     keysort(Cands, [_-Target|_]), !.
 
-% 6) Expand the reachable safe frontier. With two golds already carried,
-% use a deterministic row/column sweep before information gain; this avoids
-% dithering late in the game while still only targeting proven-safe cells.
-decide(mover(Target)) :-
-    gold_carried(N),
-    target_gold(TotalGold),
-    N >= TotalGold - 1,
-    findall(D-R-C-NegInfo-T,
-            ( reachable_safe_frontier(T),
-              T = R/C,
-              action_distance(T, likely_safe, D),
-              info_gain(T, Info),
-              NegInfo is -Info
-            ),
-            Cands),
-    Cands \= [],
-    keysort(Cands, [_-Target|_]), !.
-
-% 6b) Early exploration: closest by action cost, then information gain.
+% 5) Expand the reachable safe frontier: closest by action cost, then
+% information gain.
 decide(mover(Target)) :-
     findall(D-NegInfo-T,
             ( reachable_safe_frontier(T),
@@ -487,7 +429,7 @@ decide(mover(Target)) :-
     Cands \= [],
     keysort(Cands, [_-Target|_]), !.
 
-% 7a) Best forward step is a confirmed pit -> retreat at any cost.
+% 6a) Best forward step is a confirmed pit -> retreat at any cost.
 decide(mover(Exit)) :-
     agent_pos(Pos),
     exit_pos(Exit),
@@ -495,7 +437,7 @@ decide(mover(Exit)) :-
     best_risky_frontier(Best),
     confirmed_pit(Best), !.
 
-% 7b) Best forward step is a multi-source-pit suspicion -> retreat.
+% 6b) Best forward step is a multi-source-pit suspicion -> retreat.
 decide(mover(Exit)) :-
     agent_pos(Pos),
     exit_pos(Exit),
@@ -504,18 +446,16 @@ decide(mover(Exit)) :-
     risk_pit(Best),
     source_count(Best, breeze_at, K), K >= 2, !.
 
-% 7c) Goal reached and only risky-pit frontier left -> retreat home.
+% 6c) Carrying gold and only risky-pit frontier left -> retreat home.
 decide(mover(Exit)) :-
     agent_pos(Pos),
     exit_pos(Exit),
     Pos \= Exit,
-    gold_carried(N),
-    target_gold(TotalGold),
-    N >= TotalGold,
+    gold_carried(N), N > 0,
     best_risky_frontier(Best),
     ( risk_pit(Best) ; confirmed_teleport(Best) ), !.
 
-% 8) Take the least-risky frontier step otherwise.
+% 7) Take the least-risky frontier step otherwise.
 decide(mover(Target)) :-
     findall(Score-D-NegInfo-T,
             ( risky_frontier(T),
@@ -528,7 +468,7 @@ decide(mover(Target)) :-
     Cands \= [],
     keysort(Cands, [_-Target|_]), !.
 
-% 9) Nothing useful left -> head home.
+% 8) Nothing useful left -> head home.
 decide(mover(Exit)) :-
     agent_pos(Pos),
     exit_pos(Exit),

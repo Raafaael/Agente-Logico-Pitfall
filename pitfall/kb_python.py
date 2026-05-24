@@ -27,20 +27,13 @@ from typing import Optional
 
 from .planner import plan_action_cost
 from .types import (
-    ASSIGNMENT_COUNTS,
     DAMAGE_BIG,
     Direction,
     GRID_SIZE,
     LOW_ENERGY_RETURN,
     Position,
-    REQUIRED_GOLD,
     orthogonal_neighbors,
 )
-
-
-TOTAL_PITS = ASSIGNMENT_COUNTS["pit"]
-TOTAL_ENEMIES = ASSIGNMENT_COUNTS["enemy_small"] + ASSIGNMENT_COUNTS["enemy_big"]
-TOTAL_TELEPORTERS = ASSIGNMENT_COUNTS["teleporter"]
 
 
 @dataclass
@@ -208,8 +201,6 @@ class PythonKB:
                             risk.add(target)
                             clear.discard(target)
                             changed = True
-            if self._apply_global_count_limits():
-                changed = True
 
     def _hazard_candidate(
         self,
@@ -226,58 +217,6 @@ class PythonKB:
         if self._confirmed_any(pos):
             return False
         return True
-
-    def _apply_global_count_limits(self) -> bool:
-        """Clear a hazard type only after every instance was inferred.
-
-        This uses the public quantities from the assignment, never the map
-        positions. For example: after the KB has logically confirmed all pits,
-        every other cell is clear of pits.
-        """
-        changed = False
-        changed |= self._clear_hazard_if_complete(
-            self.confirmed_pit,
-            self.pit_clear,
-            self.risk_pit,
-            TOTAL_PITS,
-        )
-        changed |= self._clear_hazard_if_complete(
-            self.confirmed_enemy,
-            self.enemy_clear,
-            self.risk_enemy,
-            TOTAL_ENEMIES,
-        )
-        changed |= self._clear_hazard_if_complete(
-            self.confirmed_teleport,
-            self.tele_clear,
-            self.risk_teleport,
-            TOTAL_TELEPORTERS,
-        )
-        return changed
-
-    def _clear_hazard_if_complete(
-        self,
-        confirmed_set: set[Position],
-        clear_set: set[Position],
-        risk_set: set[Position],
-        total: int,
-    ) -> bool:
-        if len(confirmed_set) < total:
-            return False
-
-        changed = False
-        for r in range(1, self.size + 1):
-            for c in range(1, self.size + 1):
-                pos = (r, c)
-                if pos in confirmed_set:
-                    continue
-                if pos not in clear_set:
-                    clear_set.add(pos)
-                    changed = True
-                if pos in risk_set:
-                    risk_set.discard(pos)
-                    changed = True
-        return changed
 
     def mark_gold_taken(self, pos: Position) -> None:
         self.gold_seen.discard(pos)
@@ -369,9 +308,6 @@ class PythonKB:
         if pos in self.powerup_seen and self.energy <= 60:
             return "pegar", None
 
-        if pos == self.exit_pos and self.gold_carried >= REQUIRED_GOLD:
-            return "sair", None
-
         # 1) Already-known gold reachable through safe cells -> go grab it.
         gold_target = self._best_safe_target(self.gold_seen)
         if gold_target is not None:
@@ -449,8 +385,6 @@ class PythonKB:
     def _safe_frontier_key(self, pos: Position) -> tuple[float, ...]:
         distance = self._safe_action_distance(pos)
         info = self._info_gain(pos)
-        if self.gold_carried >= REQUIRED_GOLD - 1:
-            return (distance, pos[0], pos[1], -info)
         return (distance, -info)
 
     def _info_gain(self, pos: Position) -> int:
@@ -525,7 +459,7 @@ class PythonKB:
                 return True
         if candidate in self.risk_enemy and self.energy <= DAMAGE_BIG:
             return True
-        if self.gold_carried >= REQUIRED_GOLD and (
+        if self.gold_carried > 0 and (
             candidate in self.risk_pit
             or candidate in self.confirmed_teleport
         ):
