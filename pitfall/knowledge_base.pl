@@ -45,7 +45,7 @@
 
 grid_size(12).
 target_gold(3).
-energy_low_threshold(200).  % limiar para buscar/pegar powerup (50% de INITIAL_ENERGY=400)
+energy_low_threshold(50).   % limiar para buscar/pegar powerup (50% de INITIAL_ENERGY=100)
 
 valid_pos(R/C) :-
     grid_size(N),
@@ -345,7 +345,7 @@ reset_kb :-
     retractall(gold_carried(_)),
     ( exit_pos(_) -> true ; assertz(exit_pos(1/1)) ),
     assertz(gold_carried(0)),
-    assertz(agent_energy(400)).
+    assertz(agent_energy(100)).
 
 % =====================================================================
 % Bridge loop (protocolo stdin/stdout usado por prolog_bridge.py)
