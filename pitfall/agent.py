@@ -164,12 +164,7 @@ class Agent:
         if self.state.pending:
             return self.state.pending.popleft()
 
-        should_return = (
-            self.state.gold_carried >= GOLD_TARGET
-            or (self.state.gold_carried > 0 and self.state.energy <= LOW_ENERGY_RETURN)
-            or self.state.energy <= CRITICAL_ENERGY_RETURN
-        )
-        if should_return:
+        if self.state.gold_carried >= GOLD_TARGET:
             if self.state.pos == self.exit_pos:
                 self.state.last_decision = ("sair", None)
                 return Action.EXIT
@@ -183,6 +178,15 @@ class Agent:
 
         kind, target = self.kb.decide()
         self.state.last_decision = (kind, target)
+
+        if self._should_force_energy_retreat(kind, target):
+            if self.state.pos == self.exit_pos:
+                self.state.last_decision = ("sair", None)
+                return Action.EXIT
+            action = self._move_toward(self.exit_pos)
+            if action is not None:
+                self.state.last_decision = ("mover", self.exit_pos)
+                return action
 
         if kind == "pegar":
             return Action.GRAB
@@ -203,6 +207,23 @@ class Agent:
             return Action.EXIT
 
         return Action.EXIT
+
+    def _should_force_energy_retreat(
+        self,
+        kind: str,
+        target: Optional[Position],
+    ) -> bool:
+        """Keep low-energy caution from blocking proven-safe progress."""
+        if kind != "mover" or target is None or target == self.exit_pos:
+            return False
+        if self.kb.likely_safe(target):
+            return False
+        if self.state.energy <= CRITICAL_ENERGY_RETURN:
+            return True
+        return (
+            self.state.gold_carried > 0
+            and self.state.energy <= LOW_ENERGY_RETURN
+        )
 
     def _move_toward(self, target: Position) -> Optional[Action]:
         retreat = target == self.exit_pos

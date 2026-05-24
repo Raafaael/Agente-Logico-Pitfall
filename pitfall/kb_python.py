@@ -26,7 +26,21 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from .planner import plan_action_cost
-from .types import Direction, GOLD_TARGET, GRID_SIZE, Position, orthogonal_neighbors
+from .types import (
+    DAMAGE_BIG,
+    Direction,
+    ELEMENT_COUNTS,
+    GOLD_TARGET,
+    GRID_SIZE,
+    LOW_ENERGY_RETURN,
+    Position,
+    orthogonal_neighbors,
+)
+
+
+TOTAL_PITS = ELEMENT_COUNTS["pit"]
+TOTAL_ENEMIES = ELEMENT_COUNTS["enemy_small"] + ELEMENT_COUNTS["enemy_big"]
+TOTAL_TELEPORTERS = ELEMENT_COUNTS["teleporter"]
 
 
 @dataclass
@@ -194,6 +208,8 @@ class PythonKB:
                             risk.add(target)
                             clear.discard(target)
                             changed = True
+            if self._apply_global_count_limits():
+                changed = True
 
     def _hazard_candidate(
         self,
@@ -203,11 +219,67 @@ class PythonKB:
     ) -> bool:
         if not self._valid(pos):
             return False
+        if pos in confirmed_set:
+            return True
         if pos in clear_set or pos in self.visited or pos in self.confirmed_safe:
             return False
-        if self._confirmed_any(pos) and pos not in confirmed_set:
+        if self._confirmed_any(pos):
             return False
         return True
+
+    def _apply_global_count_limits(self) -> bool:
+        """Use the element counts from the assignment once all are known.
+
+        The enunciation fixes the number of pits, damaging enemies and
+        teleporters. When all cells for one hazard type have been confirmed,
+        every other cell can be positively cleared for that same hazard. This
+        is still map-independent knowledge: it uses only the public rules and
+        the KB's own confirmations.
+        """
+        changed = False
+        changed |= self._clear_hazard_if_complete(
+            self.confirmed_pit,
+            self.pit_clear,
+            self.risk_pit,
+            TOTAL_PITS,
+        )
+        changed |= self._clear_hazard_if_complete(
+            self.confirmed_enemy,
+            self.enemy_clear,
+            self.risk_enemy,
+            TOTAL_ENEMIES,
+        )
+        changed |= self._clear_hazard_if_complete(
+            self.confirmed_teleport,
+            self.tele_clear,
+            self.risk_teleport,
+            TOTAL_TELEPORTERS,
+        )
+        return changed
+
+    def _clear_hazard_if_complete(
+        self,
+        confirmed_set: set[Position],
+        clear_set: set[Position],
+        risk_set: set[Position],
+        total: int,
+    ) -> bool:
+        if len(confirmed_set) < total:
+            return False
+
+        changed = False
+        for r in range(1, self.size + 1):
+            for c in range(1, self.size + 1):
+                pos = (r, c)
+                if pos in confirmed_set:
+                    continue
+                if pos not in clear_set:
+                    clear_set.add(pos)
+                    changed = True
+                if pos in risk_set:
+                    risk_set.discard(pos)
+                    changed = True
+        return changed
 
     def mark_gold_taken(self, pos: Position) -> None:
         self.gold_seen.discard(pos)
@@ -308,7 +380,7 @@ class PythonKB:
             return "mover", gold_target
 
         # 2) Low energy + known reachable powerup -> stock up.
-        if self.energy <= 50:
+        if self.energy <= LOW_ENERGY_RETURN:
             pu_target = self._best_safe_target(self.powerup_seen)
             if pu_target is not None:
                 return "mover", pu_target
@@ -323,10 +395,7 @@ class PythonKB:
         if frontier:
             target = min(
                 frontier,
-                key=lambda p: (
-                    self._safe_action_distance(p),
-                    -self._info_gain(p),
-                ),
+                key=self._safe_frontier_key,
             )
             return "mover", target
 
@@ -378,6 +447,13 @@ class PythonKB:
             return None
         reachable.sort()
         return reachable[0][1]
+
+    def _safe_frontier_key(self, pos: Position) -> tuple[float, ...]:
+        distance = self._safe_action_distance(pos)
+        info = self._info_gain(pos)
+        if self.gold_carried >= GOLD_TARGET - 1:
+            return (distance, pos[0], pos[1], -info)
+        return (distance, -info)
 
     def _info_gain(self, pos: Position) -> int:
         """How many unknown neighbors a candidate would let us probe."""
@@ -444,6 +520,12 @@ class PythonKB:
             candidate in self.risk_pit
             and self._source_count(candidate, self.breeze_at) >= 2
         ):
+            return True
+        if candidate in self.confirmed_enemy:
+            damage = self.enemy_damage.get(candidate, DAMAGE_BIG)
+            if self.energy <= damage:
+                return True
+        if candidate in self.risk_enemy and self.energy <= DAMAGE_BIG:
             return True
         if self.gold_carried > 0 and (
             candidate in self.risk_pit
