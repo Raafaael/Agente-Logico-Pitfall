@@ -18,7 +18,7 @@ from pitfall.map_loader import (
     save_map_to_file,
 )
 from pitfall.render import LEGEND, render_status, render_world
-from pitfall.types import Action, Direction, INITIAL_ENERGY, START_POS
+from pitfall.types import Direction, INITIAL_ENERGY, START_POS
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:

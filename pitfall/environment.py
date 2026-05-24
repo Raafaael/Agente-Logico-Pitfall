@@ -26,6 +26,7 @@ from .types import (
     Position,
     START_POS,
     StepResult,
+    WALK_ENERGY_COST,
     in_bounds,
     orthogonal_neighbors,
 )
@@ -78,11 +79,13 @@ class Environment:
             if nc == CellType.TELEPORTER:
                 flash = True
         glow = cell == CellType.GOLD
+        powerup = cell == CellType.POWERUP
         return Percept(
             steps=steps,
             breeze=breeze,
             flash=flash,
             glow=glow,
+            powerup=powerup,
             impact=self._last_impact,
             scream=self._last_scream,
         )
@@ -116,6 +119,7 @@ class Environment:
             message = f"virou para direita -> {self.agent_dir.short}"
 
         elif action == Action.WALK:
+            energy_delta += WALK_ENERGY_COST
             dr, dc = self.agent_dir.delta
             target = (self.agent_pos[0] + dr, self.agent_pos[1] + dc)
             if not in_bounds(target, self.size):
@@ -161,11 +165,11 @@ class Environment:
         self.energy += energy_delta
         self.steps += 1
 
-        if self.energy <= 0 and self.alive:
+        if self.energy <= 0 and self.alive and not self.escaped:
             self.alive = False
             self.score += DEATH_PENALTY
             score_delta += DEATH_PENALTY
-            message += " | morreu por exaustao/dano"
+            message += " | morreu por exaustao"
 
         return StepResult(
             percept=self.get_percept(),
@@ -197,13 +201,17 @@ class Environment:
         if cell == CellType.ENEMY_SMALL:
             result["energy"] -= DAMAGE_SMALL
             result["score"] -= DAMAGE_SMALL
-            result["message"] = f"atingido por inimigo pequeno (-{DAMAGE_SMALL})"
+            result["message"] = (
+                f"atingido por inimigo pequeno (-{DAMAGE_SMALL} energia/score)"
+            )
             return result
 
         if cell == CellType.ENEMY_BIG:
             result["energy"] -= DAMAGE_BIG
             result["score"] -= DAMAGE_BIG
-            result["message"] = f"atingido por inimigo grande (-{DAMAGE_BIG})"
+            result["message"] = (
+                f"atingido por inimigo grande (-{DAMAGE_BIG} energia/score)"
+            )
             return result
 
         if cell == CellType.TELEPORTER:
@@ -224,11 +232,7 @@ class Environment:
             return result
 
         if cell == CellType.POWERUP:
-            set_cell(self._grid, pos, CellType.EMPTY)
-            self.powerups_taken += 1
-            result["energy"] += POWERUP_ENERGY_GAIN
-            result["picked"] = "powerup"
-            result["message"] = f"powerup coletado (+{POWERUP_ENERGY_GAIN} energia)"
+            result["message"] = "sala com powerup"
             return result
 
         result["message"] = "sala vazia"

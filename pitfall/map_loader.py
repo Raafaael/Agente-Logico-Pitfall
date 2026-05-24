@@ -160,12 +160,9 @@ def load_map_from_file(path: str | Path) -> tuple[Grid, dict]:
 def _load_prolog_map(text: str) -> tuple[Grid, dict]:
     """Parse a `tile(X, Y, 'Z').`-style map (the legacy reference format).
 
-    Legacy uses cartesian coordinates with Y=1 at the bottom and Y=12 at
-    the top, and the agent starts at `posicao(1, 1, norte)`. We translate
-    to our (row, col) layout (row 1 at top), so the legacy bottom-left
-    cell lands at our bottom-left visual corner, i.e. `(size, 1)`. The
-    returned `start` in metadata reflects this so the Environment is
-    initialised at the right location.
+    Maps ``tile(X, Y, 'Z')`` directly to our ``(row=Y, col=X)`` layout so
+    that ``tile(1, 1, '')`` lands at our start position ``(1, 1)`` -- the
+    position the assignment specifies for the agent.
     """
     size_match = re.search(r"map_size\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)", text)
     size = int(size_match.group(1)) if size_match else GRID_SIZE
@@ -174,16 +171,14 @@ def _load_prolog_map(text: str) -> tuple[Grid, dict]:
     pattern = re.compile(r"tile\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*'([^']*)'\s*\)")
     for match in pattern.finditer(text):
         x, y, sym = int(match.group(1)), int(match.group(2)), match.group(3)
-        row = size + 1 - y
-        col = x
+        row, col = y, x
         cell = CellType.from_symbol(sym if sym else ".")
         set_cell(grid, (row, col), cell)
 
-    legacy_start: Position = (size, 1)
-    validate_map(grid, legacy_start)
+    validate_map(grid, START_POS)
     return grid, {
-        "start": legacy_start,
-        "initial_direction": Direction.NORTH,
+        "start": START_POS,
+        "initial_direction": Direction.EAST,
         "size": size,
     }
 

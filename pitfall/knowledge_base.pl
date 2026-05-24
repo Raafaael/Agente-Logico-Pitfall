@@ -40,8 +40,7 @@
 
 grid_size(12).
 target_gold(3).
-low_energy_threshold(50).
-critical_energy_threshold(25).
+low_energy_threshold(60).
 
 valid_pos(R/C) :-
     grid_size(N),
@@ -112,6 +111,9 @@ update_perception(Pos, Percepts) :-
     ( member(glow, Percepts) -> assert_unique(gold_seen(Pos))
     ;                           retractall(gold_seen(Pos))
     ),
+    ( member(powerup, Percepts) -> assert_unique(powerup_seen(Pos))
+    ;                             retractall(powerup_seen(Pos))
+    ),
     infer_confirmed_hazards.
 
 handle_percept(Sense, Percepts, StorePred, Risk, ClearPred, ConfirmPred, Ns) :-
@@ -128,11 +130,9 @@ remember_signal(StorePred, Present) :-
     ( Present == true -> assert_unique(Goal) ; retractall(Goal) ).
 
 mark_gold_taken(Pos) :- retractall(gold_seen(Pos)).
-
-note_powerup_at(Pos) :- assert_unique(powerup_seen(Pos)).
 note_powerup_taken(Pos) :- retractall(powerup_seen(Pos)).
 
-% Energy dropped on a walk into Pos -> the cell hosts an enemy.
+% Energy loss on a walk into Pos -> the cell hosts an enemy.
 note_enemy_here(Pos) :- note_enemy_here(Pos, 50).
 note_enemy_here(Pos, Damage) :-
     assert_unique(confirmed_enemy(Pos)),
@@ -225,19 +225,6 @@ reachable_safe_frontier(Pos) :-
 safe_reachable(Pos) :-
     path_distance(Pos, likely_safe, _).
 
-bfs_safe(Queue, _, Goal) :- member(Goal, Queue), !.
-bfs_safe(Queue, Visited, Goal) :-
-    findall(N,
-            ( member(P, Queue),
-              adjacent(P, N),
-              \+ member(N, Visited),
-              likely_safe(N) ),
-            NextRaw),
-    list_to_set(NextRaw, Next),
-    Next \= [],
-    append(Visited, Next, Visited1),
-    bfs_safe(Next, Visited1, Goal).
-
 path_distance(Goal, WalkablePred, D) :-
     agent_pos(Start),
     bfs_distance([Start-0], [Start], Goal, WalkablePred, D).
@@ -258,6 +245,53 @@ bfs_distance([Pos-D0|Rest], Seen, Goal, WalkablePred, D) :-
     append(Seen, NextPositions, Seen1),
     append(Rest, NextRaw, Queue1),
     bfs_distance(Queue1, Seen1, Goal, WalkablePred, D).
+
+turn_left(north, west).
+turn_left(west, south).
+turn_left(south, east).
+turn_left(east, north).
+
+turn_right(north, east).
+turn_right(east, south).
+turn_right(south, west).
+turn_right(west, north).
+
+forward(R/C, north, R1/C) :- R1 is R - 1, R1 >= 1.
+forward(R/C, south, R1/C) :- R1 is R + 1, grid_size(N), R1 =< N.
+forward(R/C, west, R/C1) :- C1 is C - 1, C1 >= 1.
+forward(R/C, east, R/C1) :- C1 is C + 1, grid_size(N), C1 =< N.
+
+action_distance(Goal, WalkablePred, D) :-
+    agent_pos(Start),
+    agent_dir(Dir),
+    bfs_action_distance([state(Start, Dir)-0], [state(Start, Dir)], Goal,
+                        WalkablePred, D).
+
+bfs_action_distance([state(Goal, _)-D|_], _, Goal, _, D) :- !.
+bfs_action_distance([state(Pos, Dir)-D0|Rest], Seen, Goal, WalkablePred, D) :-
+    D1 is D0 + 1,
+    turn_left(Dir, Left),
+    turn_right(Dir, Right),
+    findall(State-D1,
+            action_successor(Pos, Dir, Left, Right, Goal, WalkablePred,
+                             Seen, State),
+            NextRaw),
+    findall(State, member(State-_, NextRaw), NextStates),
+    append(Seen, NextStates, Seen1),
+    append(Rest, NextRaw, Queue1),
+    bfs_action_distance(Queue1, Seen1, Goal, WalkablePred, D).
+
+action_successor(Pos, _, Left, _, _, _, Seen, state(Pos, Left)) :-
+    \+ member(state(Pos, Left), Seen).
+action_successor(Pos, _, _, Right, _, _, Seen, state(Pos, Right)) :-
+    \+ member(state(Pos, Right), Seen).
+action_successor(Pos, Dir, _, _, Goal, WalkablePred, Seen, state(Next, Dir)) :-
+    forward(Pos, Dir, Next),
+    ( Next = Goal
+    ; GoalCall =.. [WalkablePred, Next],
+      call(GoalCall)
+    ),
+    \+ member(state(Next, Dir), Seen).
 
 frontier_distance(Pos, D) :-
     findall(D0,
@@ -317,6 +351,18 @@ source_count(Pos, SensePred, Count) :-
             Sources),
     length(Sources, Count).
 
+all_breeze_sources_explained(Pos) :-
+    findall(Source, (breeze_at(Source), adjacent(Source, Pos)), Sources),
+    Sources \= [],
+    all_sources_have_other_confirmed_pit(Sources, Pos).
+
+all_sources_have_other_confirmed_pit([], _).
+all_sources_have_other_confirmed_pit([Source|Rest], Pos) :-
+    adjacent(Source, Other),
+    Other \= Pos,
+    confirmed_pit(Other), !,
+    all_sources_have_other_confirmed_pit(Rest, Pos).
+
 % ---------------------------------------------------------------------
 % Decisao de alto nivel.
 % Resultado em um dos formatos:
@@ -350,11 +396,12 @@ decide(sair) :-
 % 4) Known gold reachable through safe cells -> go grab it.
 decide(mover(Target)) :-
     agent_pos(Pos),
-    findall(D-T,
+    findall(D-R-C-T,
             ( gold_seen(T),
+              T = R/C,
               T \= Pos,
               likely_safe(T),
-              path_distance(T, likely_safe, D)
+              action_distance(T, likely_safe, D)
             ),
             Cands),
     Cands \= [],
@@ -366,21 +413,24 @@ decide(mover(Target)) :-
     agent_energy(E),
     low_energy_threshold(Low),
     E =< Low,
-    findall(D-T,
+    findall(D-R-C-T,
             ( powerup_seen(T),
+              T = R/C,
               T \= Pos,
               likely_safe(T),
-              path_distance(T, likely_safe, D)
+              action_distance(T, likely_safe, D)
             ),
             Cands),
     Cands \= [],
     keysort(Cands, [_-Target|_]), !.
 
-% 6) Expand the reachable safe frontier (closest by BFS, then information gain).
+% 6) Expand the reachable safe frontier (BFS first, action cost as tie-breaker).
 decide(mover(Target)) :-
-    findall(D-NegInfo-T,
+    findall(CellD-ActionD-NegInfo-R-C-T,
             ( reachable_safe_frontier(T),
-              path_distance(T, likely_safe, D),
+              T = R/C,
+              path_distance(T, likely_safe, CellD),
+              action_distance(T, likely_safe, ActionD),
               info_gain(T, Info),
               NegInfo is -Info
             ),
@@ -388,48 +438,16 @@ decide(mover(Target)) :-
     Cands \= [],
     keysort(Cands, [_-Target|_]), !.
 
-% 7a) Best forward step is a confirmed pit -> retreat at any cost.
-decide(mover(Exit)) :-
-    agent_pos(Pos),
-    exit_pos(Exit),
-    Pos \= Exit,
-    best_risky_frontier(Best),
-    confirmed_pit(Best), !.
-
-% 7b) Best forward step is a multi-source-pit suspicion -> retreat.
-decide(mover(Exit)) :-
-    agent_pos(Pos),
-    exit_pos(Exit),
-    Pos \= Exit,
-    best_risky_frontier(Best),
-    risk_pit(Best),
-    source_count(Best, breeze_at, K), K >= 2, !.
-
-% 7c) Carrying gold and only risky-pit frontier left -> retreat home.
-decide(mover(Exit)) :-
-    agent_pos(Pos),
-    exit_pos(Exit),
-    Pos \= Exit,
-    gold_carried(N), N > 0,
-    best_risky_frontier(Best),
-    ( risk_pit(Best) ; confirmed_teleport(Best) ), !.
-
-best_risky_frontier(Target) :-
-    findall(Score-D-NegInfo-T,
-            ( risky_frontier(T),
-              frontier_distance(T, D),
-              risk_score(T, Score),
-              info_gain(T, Info),
-              NegInfo is -Info
-            ),
-            Cands),
-    Cands \= [],
-    keysort(Cands, [_-Target|_]).
-
-% 8) Take the least-risky frontier step otherwise.
+% 7) Take the least-risky frontier step whose cell is safe to target.
+%    Mirrors the Python `_should_retreat` filter: we drop candidates we would
+%    immediately want to retreat from, then pick the best survivor. If every
+%    candidate triggers retreat, this clause fails and we fall through to
+%    clause 8 (head home).
 decide(mover(Target)) :-
-    findall(Score-D-NegInfo-T,
+    findall(Score-D-NegInfo-R-C-T,
             ( risky_frontier(T),
+              T = R/C,
+              \+ should_retreat(T),
               frontier_distance(T, D),
               risk_score(T, Score),
               info_gain(T, Info),
@@ -439,16 +457,34 @@ decide(mover(Target)) :-
     Cands \= [],
     keysort(Cands, [_-Target|_]), !.
 
-% 9) Nothing useful left -> head home.
+% should_retreat(+Pos): true when entering Pos is worse than going home.
+should_retreat(P) :- confirmed_pit(P), !.
+should_retreat(P) :-
+    confirmed_enemy(P),
+    ( enemy_damage(P, D) -> true ; D = 50 ),
+    agent_energy(E),
+    E =< D, !.
+should_retreat(P) :-
+    confirmed_enemy(P),
+    info_gain(P, 0), !.
+should_retreat(P) :-
+    risk_pit(P),
+    source_count(P, breeze_at, K), K >= 2, !.
+should_retreat(P) :-
+    gold_carried(N), N > 0,
+    confirmed_teleport(P), !.
+should_retreat(P) :-
+    gold_carried(N), N > 0,
+    risk_pit(P),
+    \+ ( all_breeze_sources_explained(P), info_gain(P, IG), IG > 0 ).
+
+% 8) Nothing useful left -> head home.
 decide(mover(Exit)) :-
     agent_pos(Pos),
     exit_pos(Exit),
     Pos \= Exit, !.
 
 decide(sair).
-
-manhattan(R1/C1, R2/C2, D) :-
-    D is abs(R1 - R2) + abs(C1 - C2).
 
 % ---------------------------------------------------------------------
 % Reset / inicializacao usados pelo lado Python.

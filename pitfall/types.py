@@ -1,7 +1,7 @@
 """Core enums, dataclasses and constants used across the project."""
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Tuple
 
@@ -11,6 +11,7 @@ START_POS: "Position" = (1, 1)
 INITIAL_ENERGY = 100
 
 ACTION_COST = -1
+WALK_ENERGY_COST = 0
 GOLD_REWARD = 1000
 PIT_PENALTY = -1000
 DEATH_PENALTY = -1000
@@ -29,6 +30,7 @@ ELEMENT_COUNTS = {
 }
 GOLD_TARGET = ELEMENT_COUNTS["gold"]
 LOW_ENERGY_RETURN = 60
+TWO_GOLD_RETURN = 70
 CRITICAL_ENERGY_RETURN = 25
 
 
@@ -143,6 +145,7 @@ class Percept:
     breeze: bool = False    # adjacente a poco (brisa)
     flash: bool = False     # adjacente a teletransporte (flash)
     glow: bool = False      # ouro na sala atual (brilho)
+    powerup: bool = False   # powerup na sala atual
     impact: bool = False    # andou contra a parede
     scream: bool = False    # reserved for future enemy-combat extensions
 

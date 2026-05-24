@@ -10,6 +10,7 @@ Both backends expose the same surface used by :mod:`pitfall.agent`:
     - :meth:`set_agent_dir(direction)`
     - :meth:`update_perception(pos, percepts)`
     - :meth:`mark_gold_taken(pos)`
+    - :meth:`note_powerup_taken(pos)`
     - :meth:`note_teleporter_here(pos)`
     - :meth:`likely_safe(pos) -> bool`
     - :meth:`is_visited(pos) -> bool`
@@ -54,6 +55,7 @@ class KnowledgeBase(Protocol):
     def walkable_for_path(self, pos: Position) -> bool: ...
     def is_visited(self, pos: Position) -> bool: ...
     def is_known_gold(self, pos: Position) -> bool: ...
+    def is_known_powerup(self, pos: Position) -> bool: ...
     def is_risky(self, pos: Position) -> bool: ...
     def safe_unvisited_frontier(self) -> list[Position]: ...
     def decide(self) -> tuple[str, Optional[Position]]: ...
@@ -147,9 +149,6 @@ class SwiPrologKB:
         self._do(f"mark_gold_taken({_pos(pos)})")
         self._do("inc_gold")
 
-    def note_powerup_at(self, pos: Position) -> None:
-        self._do(f"note_powerup_at({_pos(pos)})")
-
     def note_powerup_taken(self, pos: Position) -> None:
         self._do(f"note_powerup_taken({_pos(pos)})")
 
@@ -173,6 +172,9 @@ class SwiPrologKB:
 
     def is_known_gold(self, pos: Position) -> bool:
         return self._do(f"gold_seen({_pos(pos)})")
+
+    def is_known_powerup(self, pos: Position) -> bool:
+        return self._do(f"powerup_seen({_pos(pos)})")
 
     def is_risky(self, pos: Position) -> bool:
         return self._do(f"risky({_pos(pos)})")

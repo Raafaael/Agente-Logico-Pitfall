@@ -26,7 +26,15 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from .planner import plan_action_cost
-from .types import Direction, GOLD_TARGET, GRID_SIZE, Position, orthogonal_neighbors
+from .types import (
+    DAMAGE_BIG,
+    Direction,
+    GOLD_TARGET,
+    GRID_SIZE,
+    LOW_ENERGY_RETURN,
+    Position,
+    orthogonal_neighbors,
+)
 
 
 @dataclass
@@ -132,6 +140,10 @@ class PythonKB:
             self.gold_seen.add(pos)
         else:
             self.gold_seen.discard(pos)
+        if "powerup" in percepts:
+            self.powerup_seen.add(pos)
+        else:
+            self.powerup_seen.discard(pos)
 
         self._infer_confirmed_hazards()
 
@@ -213,13 +225,8 @@ class PythonKB:
         self.gold_seen.discard(pos)
         self.gold_carried += 1
 
-    def note_powerup_at(self, pos: Position) -> None:
-        if pos in self.visited and pos not in self.powerup_seen:
-            return
-        self.powerup_seen.add(pos)
-
     def note_enemy_here(self, pos: Position, damage: int | None = None) -> None:
-        """Record that the agent took damage entering ``pos`` -- there is an
+        """Record that the agent lost energy entering ``pos`` -- there is an
         enemy in this exact cell. The cell remains visited (we are standing
         in it), but it should no longer be picked as a transit-cell when a
         less-painful path exists."""
@@ -266,6 +273,9 @@ class PythonKB:
     def is_known_gold(self, pos: Position) -> bool:
         return pos in self.gold_seen
 
+    def is_known_powerup(self, pos: Position) -> bool:
+        return pos in self.powerup_seen
+
     def is_risky(self, pos: Position) -> bool:
         if pos in self.confirmed_safe:
             return False
@@ -296,7 +306,7 @@ class PythonKB:
         if pos in self.gold_seen:
             return "pegar", None
 
-        if pos in self.powerup_seen and self.energy <= 60:
+        if pos in self.powerup_seen and self.energy <= LOW_ENERGY_RETURN:
             return "pegar", None
 
         if pos == self.exit_pos and self.gold_carried >= GOLD_TARGET:
@@ -308,7 +318,7 @@ class PythonKB:
             return "mover", gold_target
 
         # 2) Low energy + known reachable powerup -> stock up.
-        if self.energy <= 50:
+        if self.energy <= LOW_ENERGY_RETURN:
             pu_target = self._best_safe_target(self.powerup_seen)
             if pu_target is not None:
                 return "mover", pu_target
@@ -324,6 +334,7 @@ class PythonKB:
             target = min(
                 frontier,
                 key=lambda p: (
+                    self._safe_path_distance(p),
                     self._safe_action_distance(p),
                     -self._info_gain(p),
                 ),
@@ -339,7 +350,7 @@ class PythonKB:
             if distance != float("inf"):
                 risky_reachable.append((p, distance))
         if risky_reachable:
-            best, _distance = min(
+            risky_sorted = sorted(
                 risky_reachable,
                 key=lambda p: (
                     self.risk_score(p[0]),
@@ -348,11 +359,12 @@ class PythonKB:
                     abs(p[0][0] - pos[0]) + abs(p[0][1] - pos[1]),
                 ),
             )
-            if self._should_retreat(best):
-                if pos == self.exit_pos:
-                    return "sair", None
-                return "mover", self.exit_pos
-            return "mover", best
+            for best, _distance in risky_sorted:
+                if not self._should_retreat(best):
+                    return "mover", best
+            if pos == self.exit_pos:
+                return "sair", None
+            return "mover", self.exit_pos
 
         if pos != self.exit_pos:
             return "mover", self.exit_pos
@@ -433,6 +445,9 @@ class PythonKB:
             inference fires.
           - Already carrying gold and best forward step is any pit/teleport
             risk -> the score in hand beats the gamble.
+          - Exception: if every breeze source pointing at a risk_pit cell
+            already has a confirmed pit elsewhere, the extra-pit probability
+            drops to background rate (~4 %) -- allow exploration even with gold.
         Pure ``risk_enemy`` steps are kept on the table: damage is finite
         and survivable, and rejecting them paralyses exploration.
         """
@@ -440,17 +455,56 @@ class PythonKB:
             return False
         if candidate in self.confirmed_pit:
             return True
+        if candidate in self.confirmed_enemy:
+            damage = self.enemy_damage.get(candidate, DAMAGE_BIG)
+            if self.energy <= damage:
+                return True
+            # Even when survivable, entering a known enemy with no unexplored
+            # neighbours is pure -damage score for zero new information.
+            if self._info_gain(candidate) == 0:
+                return True
         if (
             candidate in self.risk_pit
             and self._source_count(candidate, self.breeze_at) >= 2
         ):
             return True
-        if self.gold_carried > 0 and (
-            candidate in self.risk_pit
-            or candidate in self.confirmed_teleport
-        ):
+        if self.gold_carried > 0 and candidate in self.confirmed_teleport:
             return True
+
+        if self.gold_carried > 0 and candidate in self.risk_pit:
+            # Retreat unless every breeze source pointing here is already
+            # explained by a confirmed pit AND there is genuine new info to
+            # gain. With gold at stake, "explained but useless" is not worth
+            # the residual pit probability.
+            if (
+                self._all_breeze_sources_explained(candidate)
+                and self._info_gain(candidate) > 0
+            ):
+                return False
+            return True
+
         return False
+
+    def _all_breeze_sources_explained(self, pos: Position) -> bool:
+        """Return True when every cell that senses breeze adjacent to ``pos``
+        already has a confirmed pit among its *other* neighbors.
+
+        When this holds the evidence for ``pos`` being a pit is entirely
+        "secondary" -- all breezes are already accounted for by known pits.
+        The marginal probability that ``pos`` is an additional adjacent pit is
+        roughly the background base-rate (~4 %), making exploration worthwhile.
+        """
+        found_source = False
+        for source in self.breeze_at:
+            if pos not in orthogonal_neighbors(source, self.size):
+                continue
+            found_source = True
+            if not any(
+                n in self.confirmed_pit and n != pos
+                for n in orthogonal_neighbors(source, self.size)
+            ):
+                return False
+        return found_source
 
     def _can_reach_exit(self) -> bool:
         if self.agent_pos == self.exit_pos:

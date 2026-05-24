@@ -11,13 +11,16 @@ from .types import (
     Action,
     CRITICAL_ENERGY_RETURN,
     DAMAGE_BIG,
+    DAMAGE_SMALL,
     Direction,
     GOLD_TARGET,
     GRID_SIZE,
     LOW_ENERGY_RETURN,
     Percept,
     Position,
+    POWERUP_ENERGY_GAIN,
     START_POS,
+    TWO_GOLD_RETURN,
     in_bounds,
 )
 
@@ -111,8 +114,12 @@ class Agent:
             candidate = (prev_pos[0] + dr, prev_pos[1] + dc)
             if in_bounds(candidate, self.size):
                 expected_walk = candidate
-        damage_taken = self.state.last_action == Action.WALK and energy < prev_energy
-        damage_amount = prev_energy - energy if damage_taken else 0
+        enemy_energy_damage = prev_energy - energy
+        damage_taken = (
+            self.state.last_action == Action.WALK
+            and enemy_energy_damage in (DAMAGE_SMALL, DAMAGE_BIG)
+        )
+        damage_amount = enemy_energy_damage if damage_taken else 0
         teleported = (
             self.state.last_action == Action.WALK
             and expected_walk is not None
@@ -139,7 +146,7 @@ class Agent:
             self.kb.note_teleporter_here(expected_walk)
 
         if damage_taken and hasattr(self.kb, "note_enemy_here"):
-            # We walked into ``pos`` and our energy dropped -- the cell hosts
+            # We walked into ``pos`` and energy dropped by enemy damage -- the cell hosts
             # an enemy. If this happened after a teleport, ``pos`` is the
             # destination cell that hurt us.
             self.kb.note_enemy_here(pos, damage_amount)
@@ -164,10 +171,43 @@ class Agent:
         if self.state.pending:
             return self.state.pending.popleft()
 
+        # Grab visible gold before return heuristics can walk away from it.
+        if self.kb.is_known_gold(self.state.pos):
+            self.state.last_decision = ("pegar", None)
+            return Action.GRAB
+
+        if hasattr(self.kb, "is_known_powerup") and self.kb.is_known_powerup(self.state.pos):
+            self.state.last_decision = ("pegar", None)
+            return Action.GRAB
+
+        if self.state.energy <= LOW_ENERGY_RETURN:
+            powerup_target = self._known_powerup_target()
+            if powerup_target is not None:
+                action = self._move_toward(powerup_target)
+                if action is not None:
+                    self.state.last_decision = ("mover", powerup_target)
+                    return action
+
+        home_cost = self._energy_cost_to(self.exit_pos, allow_hostile_retrace=True)
+        needs_to_bank_energy = (
+            home_cost is not None
+            and self.state.energy <= home_cost + 3
+        )
         should_return = (
             self.state.gold_carried >= GOLD_TARGET
-            or (self.state.gold_carried > 0 and self.state.energy <= LOW_ENERGY_RETURN)
-            or self.state.energy <= CRITICAL_ENERGY_RETURN
+            or (
+                self.state.gold_carried >= GOLD_TARGET - 1
+                and home_cost is not None
+                and self.state.energy <= home_cost + TWO_GOLD_RETURN // 4
+            )
+            or (self.state.gold_carried > 0 and needs_to_bank_energy)
+            or (
+                self.state.gold_carried == 0
+                and home_cost is not None
+                and self.state.energy <= home_cost + 3
+            )
+            or (self.state.gold_carried == 0 and self.state.energy <= LOW_ENERGY_RETURN // 2)
+            or (home_cost is None and self.state.energy <= CRITICAL_ENERGY_RETURN)
         )
         if should_return:
             if self.state.pos == self.exit_pos:
@@ -237,7 +277,7 @@ class Agent:
         ):
             # No strictly-safe corridor home: retrace through visited cells
             # even if they now host known enemies. Reserved for retreats so
-            # we never trade damage for mere exploration.
+            # we rarely trade enemy damage for mere exploration.
             def retrace(p: Position) -> bool:
                 return self.kb.walkable_for_path(p)
 
@@ -285,7 +325,7 @@ class Agent:
 
     def _last_resort_risk_action(self) -> Optional[Action]:
         """Try a reachable enemy frontier when safe planning is exhausted."""
-        if self.backend == "python" or not hasattr(self.kb, "walkable_for_path"):
+        if not hasattr(self.kb, "walkable_for_path"):
             return None
 
         snapshot = self.kb.snapshot()
@@ -312,9 +352,6 @@ class Agent:
             if target in confirmed_pit or target in confirmed_tele:
                 continue
             if target not in risk_enemy and target not in confirmed_enemy:
-                continue
-            known_damage = enemy_damage.get(target)
-            if known_damage is not None and self.state.energy <= known_damage:
                 continue
 
             def entry_cost(pos: Position, *, target=target) -> Optional[int]:
@@ -346,7 +383,7 @@ class Agent:
 
         A confirmed enemy hurts, but it is not a one-way trap like a pit or a
         teleporter. On harder maps this lets the agent leave an isolated pocket
-        instead of burning score on impossible plans.
+        instead of wasting actions on impossible plans.
         """
         if self.state.energy <= LOW_ENERGY_RETURN:
             return False
@@ -363,6 +400,64 @@ class Agent:
         if self.state.gold_carried > 0 and (target in risk_pit or target in risk_tele):
             return False
         return True
+
+    def _known_powerup_target(self) -> Optional[Position]:
+        snapshot = self.kb.snapshot()
+        candidates: list[tuple[int, Position]] = []
+        for raw in snapshot.get("powerup_seen", []):
+            target = tuple(raw)
+            if target == self.state.pos:
+                continue
+            actions = self._plan_path(target, allow_hostile_retrace=False)
+            if not actions:
+                continue
+            energy_cost = self._energy_cost_for_actions(actions)
+            # Do not spend more known enemy-damage energy than the powerup can repay.
+            if energy_cost <= POWERUP_ENERGY_GAIN:
+                candidates.append((energy_cost, target))
+        if not candidates:
+            return None
+        candidates.sort()
+        return candidates[0][1]
+
+    def _energy_cost_to(
+        self,
+        target: Position,
+        *,
+        allow_hostile_retrace: bool = False,
+    ) -> Optional[int]:
+        actions = self._plan_path(target, allow_hostile_retrace=allow_hostile_retrace)
+        if not actions and target != self.state.pos:
+            return None
+        return self._energy_cost_for_actions(actions)
+
+    def _energy_cost_for_actions(self, actions: list[Action]) -> int:
+        """Energy spent by a plan under the current rules.
+
+        Walking itself is free; known enemy cells drain energy whenever the
+        plan enters them.
+        """
+        snapshot = self.kb.snapshot()
+        confirmed_enemy = set(map(tuple, snapshot.get("confirmed_enemy", [])))
+        enemy_damage = {
+            tuple(pos): int(damage)
+            for pos, damage in snapshot.get("enemy_damage", [])
+        }
+
+        pos = self.state.pos
+        direction = self.state.direction
+        total = 0
+        for action in actions:
+            if action == Action.TURN_LEFT:
+                direction = direction.turn_left()
+            elif action == Action.TURN_RIGHT:
+                direction = direction.turn_right()
+            elif action == Action.WALK:
+                dr, dc = direction.delta
+                pos = (pos[0] + dr, pos[1] + dc)
+                if pos in confirmed_enemy:
+                    total += enemy_damage.get(pos, DAMAGE_BIG)
+        return total
 
     def _entry_cost_for_retrace(self):
         snapshot = self.kb.snapshot()

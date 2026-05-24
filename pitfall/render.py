@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from .map_loader import Grid
-from .types import CellType, Direction, GRID_SIZE, Position
+from .types import CellType, Direction, Position
 
 
 _DIR_GLYPH = {
@@ -48,7 +48,7 @@ def render_world(grid: Grid, agent_pos: Position, agent_dir: Direction,
             elif reveal:
                 glyph = _CELL_GLYPH[grid[r - 1][c - 1]]
             elif pos in visited or pos in safe:
-                glyph = _glyph_for_known(grid, pos) if reveal else _knowledge_glyph(
+                glyph = _knowledge_glyph(
                     pos, visited, safe, risk_pit, risk_enemy, risk_tele,
                     confirmed_pit, confirmed_enemy, confirmed_tele
                 )

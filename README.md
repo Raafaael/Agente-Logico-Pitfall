@@ -168,8 +168,10 @@ Mapas `.pl` no formato `tile(X, Y, 'O').` tambem sao carregados.
 - Energia inicial 100.
 - Geracao aleatoria com 2 inimigos pequenos, 2 grandes, 4 teletransportes,
   8 pocos, 3 ouros e 3 powerups.
+- `Andar` nao consome energia por si so; energia cai ao entrar em inimigos.
 - Pontuacao por acao, ouro, dano de inimigo, poco e morte.
-- Powerup recupera energia automaticamente ao entrar na sala.
+- Powerup recupera energia ao executar `pegar` na sala; se nao for necessario
+  na hora, ele permanece conhecido para uma busca posterior.
 - Teletransporte pode cair em qualquer outra sala, inclusive perigo. Quando
   `--seed` e' usado, os teletransportes tambem ficam reprodutiveis.
 - Agente nao consulta o mapa real para decidir.
@@ -190,10 +192,10 @@ A base de conhecimento (Python e Prolog) raciocina em camadas:
 2. **Visita = prova**: ao sobreviver em uma sala, o agente desconfirma poco e
    teletransporte naquela celula. Inimigo permanece confirmado: o agente
    levou dano mas a sala continua hostil.
-3. **Deducao por dano**: se a energia caiu apos um `andar`, o agente conclui
-   que a sala em que acabou de entrar abriga um inimigo, mesmo sem ter
-   passos como percepcao. O dano recebido tambem fica associado aquela sala
-   para evitar atravessar um inimigo letal no retorno.
+3. **Deducao por dano**: se a energia caiu apos um `andar`,
+   o agente conclui que a sala em que acabou de entrar abriga um inimigo,
+   mesmo sem ter passos como percepcao. O dano recebido fica associado aquela sala
+   para evitar atravessar um inimigo perigoso no retorno.
 4. **Deducao por teletransporte**: se um `andar` deveria terminar em uma sala
    vizinha, mas o agente acorda em outra posicao, a KB confirma que a sala
    intermediaria era um teletransporte.
@@ -204,7 +206,7 @@ A base de conhecimento (Python e Prolog) raciocina em camadas:
    pode retrilhar inimigos visitados para escapar de bolsoes isolados quando
    ainda tem energia suficiente.
 6. **Politica de decisao**:
-   - pega o ouro/powerup da sala atual quando vale a pena;
+   - pega o ouro da sala atual e guarda powerups conhecidos para usar com energia baixa;
    - persegue ouros ou powerups conhecidos atingiveis por caminhos seguros;
    - expande a fronteira segura, classificando alvos por distancia real (BFS)
      e ganho de informacao (vizinhos desconhecidos);
@@ -225,7 +227,7 @@ A base de conhecimento (Python e Prolog) raciocina em camadas:
 - Fallback contra planos impossiveis: se a KB escolhe um alvo sem rota
   executavel, o agente troca para retorno ao portal em vez de gastar turnos
   tentando sair fora da base.
-- Ultimo recurso contra bolsao isolado no Prolog: se nao ha rota segura e a
+- Ultimo recurso contra bolsao isolado: se nao ha rota segura e a
   alternativa e' abortar, o agente pode apostar em uma fronteira de inimigo
   alcancavel, evitando pocos e teletransportes.
 - Inferencia explicita de teletransportes quando a posicao final do movimento
