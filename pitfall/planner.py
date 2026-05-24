@@ -4,6 +4,7 @@ from __future__ import annotations
 import heapq
 from typing import Callable, Iterable, Optional
 
+from .TreeNode import TreeNode
 from .types import Action, Direction, GRID_SIZE, Position, orthogonal_neighbors
 
 
@@ -26,39 +27,36 @@ def astar(
     if start == goal:
         return [start]
 
-    open_heap: list[tuple[int, int, Position]] = []
+    open_heap: list[tuple[int, int, TreeNode]] = []
     counter = 0
-    heapq.heappush(open_heap, (manhattan(start, goal), counter, start))
-    came_from: dict[Position, Position] = {}
+    start_node = TreeNode(start, g=0, h=manhattan(start, goal))
+    heapq.heappush(open_heap, (start_node.f, counter, start_node))
     g_score: dict[Position, int] = {start: 0}
 
     while open_heap:
-        _, _, current = heapq.heappop(open_heap)
+        _, _, node = heapq.heappop(open_heap)
+        current = node.position
         if current == goal:
-            return _reconstruct(came_from, current)
+            return node.path()
 
         for nb in orthogonal_neighbors(current, size):
             if nb != goal and not is_walkable(nb):
                 continue
             tentative = g_score[current] + 1
             if tentative < g_score.get(nb, 10**9):
-                came_from[nb] = current
                 g_score[nb] = tentative
                 counter += 1
+                child = TreeNode(
+                    nb,
+                    parent=node,
+                    g=tentative,
+                    h=manhattan(nb, goal),
+                )
                 heapq.heappush(
-                    open_heap, (tentative + manhattan(nb, goal), counter, nb)
+                    open_heap, (child.f, counter, child)
                 )
 
     return None
-
-
-def _reconstruct(came_from: dict[Position, Position], end: Position) -> list[Position]:
-    path = [end]
-    while end in came_from:
-        end = came_from[end]
-        path.append(end)
-    path.reverse()
-    return path
 
 
 def path_to_actions(

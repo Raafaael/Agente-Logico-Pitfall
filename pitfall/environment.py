@@ -152,8 +152,8 @@ class Environment:
         elif action == Action.EXIT:
             if self.agent_pos == self.start_pos:
                 self.escaped = True
-                score_delta = 0   # sair com sucesso nao custa energia nem pontos
-                energy_delta = 0
+                score_delta = 0
+                energy_delta = ACTION_COST
                 message = "saiu do labirinto"
             else:
                 message = "fora da saida; nada acontece"
@@ -165,11 +165,11 @@ class Environment:
         self.energy += energy_delta
         self.steps += 1
 
-        if self.energy <= 0 and self.alive:
+        if self.energy <= 0 and self.alive and not self.escaped:
             self.alive = False
             self.score += DEATH_PENALTY
             score_delta += DEATH_PENALTY
-            message += " | morreu por exaustao/dano"
+            message += " | morreu por dano"
 
         return StepResult(
             percept=self.get_percept(),
@@ -200,11 +200,15 @@ class Environment:
 
         if cell == CellType.ENEMY_SMALL:
             result["energy"] -= DAMAGE_SMALL
+            set_cell(self._grid, pos, CellType.EMPTY)
+            self._last_scream = True
             result["message"] = f"atingido por inimigo pequeno (-{DAMAGE_SMALL})"
             return result
 
         if cell == CellType.ENEMY_BIG:
             result["energy"] -= DAMAGE_BIG
+            set_cell(self._grid, pos, CellType.EMPTY)
+            self._last_scream = True
             result["message"] = f"atingido por inimigo grande (-{DAMAGE_BIG})"
             return result
 

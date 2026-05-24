@@ -45,7 +45,7 @@
 
 grid_size(12).
 target_gold(3).
-energy_low_threshold(60).   % limiar para buscar/pegar powerup (equivale a LOW_ENERGY_RETURN)
+energy_low_threshold(200).  % limiar para buscar/pegar powerup (50% de INITIAL_ENERGY=400)
 
 valid_pos(R/C) :-
     grid_size(N),
@@ -240,13 +240,10 @@ decide(pegar) :-
     agent_pos(Pos),
     gold_seen(Pos), !.
 
-% 2. Powerup no local: coletar quando energia esta baixa
+% 2. Powerup no local: coletar sempre que encontrado
 decide(pegar) :-
     agent_pos(Pos),
-    powerup_seen(Pos),
-    agent_energy(E),
-    energy_low_threshold(T),
-    E =< T, !.
+    powerup_seen(Pos), !.
 
 % 3. Saida com todos os ouros
 decide(sair) :-
@@ -348,7 +345,7 @@ reset_kb :-
     retractall(gold_carried(_)),
     ( exit_pos(_) -> true ; assertz(exit_pos(1/1)) ),
     assertz(gold_carried(0)),
-    assertz(agent_energy(100)).
+    assertz(agent_energy(400)).
 
 % =====================================================================
 % Bridge loop (protocolo stdin/stdout usado por prolog_bridge.py)

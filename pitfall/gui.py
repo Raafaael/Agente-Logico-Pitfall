@@ -57,6 +57,8 @@ class PitfallGUI:
         self.last_message = "inicio"
         self.last_picked = "-"
         self.last_percepts = "nenhuma"
+        self.last_energy_delta = 0
+        self.last_score_delta = 0
 
         self.images: dict[str, tk.PhotoImage] = {}
         self._load_images()
@@ -190,6 +192,7 @@ class PitfallGUI:
                 "Powerups",
                 "Percepcoes",
                 "Acao",
+                "Delta E/S",
                 "Evento",
                 "Backend",
             )
@@ -295,6 +298,8 @@ class PitfallGUI:
         self.last_message = "inicio"
         self.last_picked = "-"
         self.last_percepts = str(env.get_percept())
+        self.last_energy_delta = 0
+        self.last_score_delta = 0
         self._append_log(f"Novo jogo: {source_name} | elementos={count_elements(grid)}")
         self._observe_current()
         self._refresh()
@@ -380,9 +385,12 @@ class PitfallGUI:
         self.last_action = action.value
         self.last_picked = result.picked or "-"
         self.last_message = result.message
+        self.last_energy_delta = result.energy_delta
+        self.last_score_delta = result.score_delta
         self._append_log(
             f"{self.turn:03d} | {source} | {action.value} | pos={self.env.agent_pos} "
-            f"| energia={self.env.energy} | score={self.env.score} | {result.message}"
+            f"| energia={self.env.energy} ({result.energy_delta:+d}) "
+            f"| score={self.env.score} ({result.score_delta:+d}) | {result.message}"
         )
         self._refresh()
 
@@ -575,6 +583,7 @@ class PitfallGUI:
             "Powerups": f"{self.env.powerups_taken}/3",
             "Percepcoes": self.last_percepts,
             "Acao": self.last_action,
+            "Delta E/S": f"{self.last_energy_delta:+d} / {self.last_score_delta:+d}",
             "Evento": self._status_message(),
             "Backend": self.agent.backend,
         }

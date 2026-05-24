@@ -16,7 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional
 
-from .types import GOLD_TARGET, GRID_SIZE, Position, orthogonal_neighbors
+from .types import GOLD_TARGET, GRID_SIZE, INITIAL_ENERGY, Position, orthogonal_neighbors
 
 
 @dataclass
@@ -50,14 +50,14 @@ class PythonKB:
     powerup_seen: set[Position] = field(default_factory=set)
 
     agent_pos: Position = (1, 1)
-    agent_energy: int = 100
+    agent_energy: int = INITIAL_ENERGY
     exit_pos: Position = (1, 1)
     gold_carried: int = 0
 
     backend: str = "python"
 
     # Limiar de energia para buscar/pegar powerup (energy_low_threshold em Prolog)
-    _energy_low: int = field(default=60, init=False, repr=False)
+    _energy_low: int = field(default=INITIAL_ENERGY // 2, init=False, repr=False)
 
     # Mapeamento: nome do percepto -> observacao de perigo
     _PERCEPT_OBS: dict = field(
@@ -78,7 +78,7 @@ class PythonKB:
         self.gold_seen.clear()
         self.powerup_seen.clear()
         self.agent_pos = self.exit_pos
-        self.agent_energy = 100
+        self.agent_energy = INITIAL_ENERGY
         self.gold_carried = 0
 
     def set_exit(self, pos: Position) -> None:
@@ -236,8 +236,8 @@ class PythonKB:
         if pos in self.gold_seen:
             return "pegar", None
 
-        # 2. Powerup no local quando energia baixa
-        if pos in self.powerup_seen and self.agent_energy <= self._energy_low:
+        # 2. Powerup no local: pegar sempre que encontrado.
+        if pos in self.powerup_seen:
             return "pegar", None
 
         # 3. Saida com todos os ouros

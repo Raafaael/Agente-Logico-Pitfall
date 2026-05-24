@@ -29,8 +29,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                    help="Seed para geracao aleatoria do mapa.")
     p.add_argument("--save-map", type=Path,
                    help="Salva o mapa gerado em arquivo JSON antes de jogar.")
-    p.add_argument("--max-steps", type=int, default=400,
-                   help="Limite de turnos (default: 400).")
+    p.add_argument("--max-steps", type=int, default=800,
+                   help="Limite de turnos (default: 800).")
     p.add_argument("--kb", choices=["auto", "prolog", "python"], default="auto",
                    help="Backend da base de conhecimento.")
     p.add_argument("--reveal", action="store_true",
