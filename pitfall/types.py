@@ -19,7 +19,8 @@ POWERUP_ENERGY_GAIN = 20
 DAMAGE_SMALL = 20
 DAMAGE_BIG = 50
 
-ELEMENT_COUNTS = {
+# Public quantities fixed by the assignment. They are counts, not positions.
+ASSIGNMENT_COUNTS = {
     "enemy_small": 2,
     "enemy_big": 2,
     "teleporter": 4,
@@ -27,7 +28,8 @@ ELEMENT_COUNTS = {
     "gold": 3,
     "powerup": 3,
 }
-GOLD_TARGET = ELEMENT_COUNTS["gold"]
+DEFAULT_MAP_COUNTS = ASSIGNMENT_COUNTS.copy()
+REQUIRED_GOLD = ASSIGNMENT_COUNTS["gold"]
 LOW_ENERGY_RETURN = 60
 CRITICAL_ENERGY_RETURN = 25
 

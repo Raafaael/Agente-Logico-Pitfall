@@ -12,11 +12,11 @@ from .types import (
     CRITICAL_ENERGY_RETURN,
     DAMAGE_BIG,
     Direction,
-    GOLD_TARGET,
     GRID_SIZE,
     LOW_ENERGY_RETURN,
     Percept,
     Position,
+    REQUIRED_GOLD,
     START_POS,
     in_bounds,
 )
@@ -164,7 +164,7 @@ class Agent:
         if self.state.pending:
             return self.state.pending.popleft()
 
-        if self.state.gold_carried >= GOLD_TARGET:
+        if self.state.gold_carried >= REQUIRED_GOLD:
             if self.state.pos == self.exit_pos:
                 self.state.last_decision = ("sair", None)
                 return Action.EXIT
@@ -181,17 +181,27 @@ class Agent:
 
         if self._should_force_energy_retreat(kind, target):
             if self.state.pos == self.exit_pos:
-                self.state.last_decision = ("sair", None)
-                return Action.EXIT
-            action = self._move_toward(self.exit_pos)
-            if action is not None:
-                self.state.last_decision = ("mover", self.exit_pos)
-                return action
+                if self.state.gold_carried >= REQUIRED_GOLD:
+                    self.state.last_decision = ("sair", None)
+                    return Action.EXIT
+            else:
+                action = self._move_toward(self.exit_pos)
+                if action is not None:
+                    self.state.last_decision = ("mover", self.exit_pos)
+                    return action
 
         if kind == "pegar":
             return Action.GRAB
         if kind == "sair":
-            return Action.EXIT
+            if (
+                self.state.pos == self.exit_pos
+                and self.state.gold_carried >= REQUIRED_GOLD
+            ):
+                return Action.EXIT
+            fallback = self._last_resort_risk_action() or self._survival_action()
+            if fallback is not None:
+                return fallback
+            return Action.TURN_RIGHT
         if kind == "mover" and target is not None:
             action = self._move_toward(target)
             if action is not None:
@@ -204,9 +214,18 @@ class Agent:
                 fallback = self._last_resort_risk_action() or self._survival_action()
                 if fallback is not None:
                     return fallback
-            return Action.EXIT
+            if self.state.pos == self.exit_pos:
+                if self.state.gold_carried >= REQUIRED_GOLD:
+                    return Action.EXIT
+                return Action.TURN_RIGHT
+            return Action.TURN_RIGHT
 
-        return Action.EXIT
+        if (
+            self.state.pos == self.exit_pos
+            and self.state.gold_carried >= REQUIRED_GOLD
+        ):
+            return Action.EXIT
+        return Action.TURN_RIGHT
 
     def _should_force_energy_retreat(
         self,
@@ -217,6 +236,8 @@ class Agent:
         if kind != "mover" or target is None or target == self.exit_pos:
             return False
         if self.kb.likely_safe(target):
+            return False
+        if self.state.gold_carried < REQUIRED_GOLD:
             return False
         if self.state.energy <= CRITICAL_ENERGY_RETURN:
             return True
@@ -232,7 +253,12 @@ class Agent:
             actions = self._plan_path(target, allow_hostile_retrace=True)
         if not actions:
             if target == self.state.pos:
-                return Action.EXIT
+                if (
+                    self.state.pos == self.exit_pos
+                    and self.state.gold_carried >= REQUIRED_GOLD
+                ):
+                    return Action.EXIT
+                return None
             fallback = self._fallback_action(target)
             if fallback is not None:
                 return fallback
@@ -306,7 +332,7 @@ class Agent:
 
     def _last_resort_risk_action(self) -> Optional[Action]:
         """Try a reachable enemy frontier when safe planning is exhausted."""
-        if self.backend == "python" or not hasattr(self.kb, "walkable_for_path"):
+        if not hasattr(self.kb, "walkable_for_path"):
             return None
 
         snapshot = self.kb.snapshot()
@@ -381,7 +407,9 @@ class Agent:
 
         if target in confirmed_pit or target in confirmed_tele:
             return False
-        if self.state.gold_carried > 0 and (target in risk_pit or target in risk_tele):
+        if self.state.gold_carried >= REQUIRED_GOLD and (
+            target in risk_pit or target in risk_tele
+        ):
             return False
         return True
 

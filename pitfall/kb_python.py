@@ -27,20 +27,20 @@ from typing import Optional
 
 from .planner import plan_action_cost
 from .types import (
+    ASSIGNMENT_COUNTS,
     DAMAGE_BIG,
     Direction,
-    ELEMENT_COUNTS,
-    GOLD_TARGET,
     GRID_SIZE,
     LOW_ENERGY_RETURN,
     Position,
+    REQUIRED_GOLD,
     orthogonal_neighbors,
 )
 
 
-TOTAL_PITS = ELEMENT_COUNTS["pit"]
-TOTAL_ENEMIES = ELEMENT_COUNTS["enemy_small"] + ELEMENT_COUNTS["enemy_big"]
-TOTAL_TELEPORTERS = ELEMENT_COUNTS["teleporter"]
+TOTAL_PITS = ASSIGNMENT_COUNTS["pit"]
+TOTAL_ENEMIES = ASSIGNMENT_COUNTS["enemy_small"] + ASSIGNMENT_COUNTS["enemy_big"]
+TOTAL_TELEPORTERS = ASSIGNMENT_COUNTS["teleporter"]
 
 
 @dataclass
@@ -228,13 +228,11 @@ class PythonKB:
         return True
 
     def _apply_global_count_limits(self) -> bool:
-        """Use the element counts from the assignment once all are known.
+        """Clear a hazard type only after every instance was inferred.
 
-        The enunciation fixes the number of pits, damaging enemies and
-        teleporters. When all cells for one hazard type have been confirmed,
-        every other cell can be positively cleared for that same hazard. This
-        is still map-independent knowledge: it uses only the public rules and
-        the KB's own confirmations.
+        This uses the public quantities from the assignment, never the map
+        positions. For example: after the KB has logically confirmed all pits,
+        every other cell is clear of pits.
         """
         changed = False
         changed |= self._clear_hazard_if_complete(
@@ -371,7 +369,7 @@ class PythonKB:
         if pos in self.powerup_seen and self.energy <= 60:
             return "pegar", None
 
-        if pos == self.exit_pos and self.gold_carried >= GOLD_TARGET:
+        if pos == self.exit_pos and self.gold_carried >= REQUIRED_GOLD:
             return "sair", None
 
         # 1) Already-known gold reachable through safe cells -> go grab it.
@@ -451,7 +449,7 @@ class PythonKB:
     def _safe_frontier_key(self, pos: Position) -> tuple[float, ...]:
         distance = self._safe_action_distance(pos)
         info = self._info_gain(pos)
-        if self.gold_carried >= GOLD_TARGET - 1:
+        if self.gold_carried >= REQUIRED_GOLD - 1:
             return (distance, pos[0], pos[1], -info)
         return (distance, -info)
 
@@ -527,7 +525,7 @@ class PythonKB:
                 return True
         if candidate in self.risk_enemy and self.energy <= DAMAGE_BIG:
             return True
-        if self.gold_carried > 0 and (
+        if self.gold_carried >= REQUIRED_GOLD and (
             candidate in self.risk_pit
             or candidate in self.confirmed_teleport
         ):

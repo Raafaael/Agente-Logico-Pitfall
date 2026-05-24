@@ -10,7 +10,7 @@ from typing import Iterable
 from .types import (
     CellType,
     Direction,
-    ELEMENT_COUNTS,
+    DEFAULT_MAP_COUNTS,
     GRID_SIZE,
     Position,
     START_POS,
@@ -59,7 +59,7 @@ def generate_random_map(
     starting cell itself is guaranteed empty).
     """
     rng = random.Random(seed)
-    counts = counts or ELEMENT_COUNTS
+    counts = counts or DEFAULT_MAP_COUNTS
     grid = empty_grid(size)
 
     reserved: set[Position] = {START_POS}

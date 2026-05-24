@@ -420,7 +420,7 @@ decide(pegar) :-
     low_energy_threshold(Low),
     E =< Low, !.
 
-% 3) At the exit with all gold -> escape.
+% 3) At the exit with the required gold -> escape.
 decide(sair) :-
     agent_pos(Pos),
     exit_pos(Pos),
@@ -475,7 +475,7 @@ decide(mover(Target)) :-
     Cands \= [],
     keysort(Cands, [_-Target|_]), !.
 
-% 6b) Early exploration: closest by BFS, then information gain.
+% 6b) Early exploration: closest by action cost, then information gain.
 decide(mover(Target)) :-
     findall(D-NegInfo-T,
             ( reachable_safe_frontier(T),
@@ -504,12 +504,14 @@ decide(mover(Exit)) :-
     risk_pit(Best),
     source_count(Best, breeze_at, K), K >= 2, !.
 
-% 7c) Carrying gold and only risky-pit frontier left -> retreat home.
+% 7c) Goal reached and only risky-pit frontier left -> retreat home.
 decide(mover(Exit)) :-
     agent_pos(Pos),
     exit_pos(Exit),
     Pos \= Exit,
-    gold_carried(N), N > 0,
+    gold_carried(N),
+    target_gold(TotalGold),
+    N >= TotalGold,
     best_risky_frontier(Best),
     ( risk_pit(Best) ; confirmed_teleport(Best) ), !.
 
