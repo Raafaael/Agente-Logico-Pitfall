@@ -276,6 +276,11 @@ class PitfallGUI:
                 start=start,
                 initial_direction=direction,
                 initial_energy=INITIAL_ENERGY,
+                rng=(
+                    random.Random(self.current_seed)
+                    if self.current_seed is not None
+                    else None
+                ),
             )
             try:
                 agent = Agent(

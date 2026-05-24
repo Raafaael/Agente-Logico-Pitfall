@@ -31,6 +31,7 @@
 :- dynamic flash_at/1.
 :- dynamic gold_seen/1.
 :- dynamic powerup_seen/1.
+:- dynamic enemy_damage/2.
 :- dynamic agent_pos/1.
 :- dynamic agent_dir/1.
 :- dynamic agent_energy/1.
@@ -132,10 +133,13 @@ note_powerup_at(Pos) :- assert_unique(powerup_seen(Pos)).
 note_powerup_taken(Pos) :- retractall(powerup_seen(Pos)).
 
 % Energy dropped on a walk into Pos -> the cell hosts an enemy.
-note_enemy_here(Pos) :-
+note_enemy_here(Pos) :- note_enemy_here(Pos, 50).
+note_enemy_here(Pos, Damage) :-
     assert_unique(confirmed_enemy(Pos)),
     retractall(enemy_clear(Pos)),
-    retractall(risk_enemy(Pos)).
+    retractall(risk_enemy(Pos)),
+    retractall(enemy_damage(Pos, _)),
+    assertz(enemy_damage(Pos, Damage)).
 
 % A walk that should have landed in Pos but woke up elsewhere proves that Pos
 % is a teleporter/bat cell.
@@ -467,13 +471,15 @@ reset_kb :-
     retractall(flash_at(_)),
     retractall(gold_seen(_)),
     retractall(powerup_seen(_)),
+    retractall(enemy_damage(_, _)),
     retractall(agent_pos(_)),
     retractall(agent_dir(_)),
     retractall(agent_energy(_)),
     retractall(gold_carried(_)),
     ( exit_pos(_) -> true ; assertz(exit_pos(1/1)) ),
     assertz(gold_carried(0)),
-    assertz(agent_energy(100)).
+    assertz(agent_energy(100)),
+    assertz(agent_dir(east)).
 
 set_agent_pos(P) :- retractall(agent_pos(_)), assertz(agent_pos(P)).
 set_agent_dir(D) :- retractall(agent_dir(_)), assertz(agent_dir(D)).

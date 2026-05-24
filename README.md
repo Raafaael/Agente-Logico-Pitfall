@@ -170,9 +170,11 @@ Mapas `.pl` no formato `tile(X, Y, 'O').` tambem sao carregados.
   8 pocos, 3 ouros e 3 powerups.
 - Pontuacao por acao, ouro, dano de inimigo, poco e morte.
 - Powerup recupera energia automaticamente ao entrar na sala.
-- Teletransporte pode cair em qualquer outra sala, inclusive perigo.
+- Teletransporte pode cair em qualquer outra sala, inclusive perigo. Quando
+  `--seed` e' usado, os teletransportes tambem ficam reprodutiveis.
 - Agente nao consulta o mapa real para decidir.
-- A* roda em Python sobre salas conhecidas/seguras.
+- O planejamento de rota roda em Python sobre salas conhecidas/seguras,
+  otimizando a sequencia real de acoes (andar e giros).
 - Prolog representa conhecimento e tomada de decisao quando `swipl` existe.
 - Fallback Python mantem o projeto executavel sem SWI-Prolog instalado.
 
@@ -190,7 +192,8 @@ A base de conhecimento (Python e Prolog) raciocina em camadas:
    levou dano mas a sala continua hostil.
 3. **Deducao por dano**: se a energia caiu apos um `andar`, o agente conclui
    que a sala em que acabou de entrar abriga um inimigo, mesmo sem ter
-   passos como percepcao.
+   passos como percepcao. O dano recebido tambem fica associado aquela sala
+   para evitar atravessar um inimigo letal no retorno.
 4. **Deducao por teletransporte**: se um `andar` deveria terminar em uma sala
    vizinha, mas o agente acorda em outra posicao, a KB confirma que a sala
    intermediaria era um teletransporte.
@@ -217,9 +220,14 @@ A base de conhecimento (Python e Prolog) raciocina em camadas:
 - Agente recua quando tem ouro suficiente, esta com energia baixa, ou quando
   a unica opcao restante e' um poco provavel.
 - Caminho de volta pela trilha visitada quando o corredor seguro foi cortado.
+- Planejador orientado por direcao: entre rotas com o mesmo numero de salas,
+  prefere a que usa menos giros e portanto perde menos score.
 - Fallback contra planos impossiveis: se a KB escolhe um alvo sem rota
   executavel, o agente troca para retorno ao portal em vez de gastar turnos
   tentando sair fora da base.
+- Ultimo recurso contra bolsao isolado no Prolog: se nao ha rota segura e a
+  alternativa e' abortar, o agente pode apostar em uma fronteira de inimigo
+  alcancavel, evitando pocos e teletransportes.
 - Inferencia explicita de teletransportes quando a posicao final do movimento
   nao corresponde a sala vizinha esperada.
 - Geracao aleatoria com vizinhanca de [1,1] sempre livre de perigos, para que

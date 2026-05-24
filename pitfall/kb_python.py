@@ -25,7 +25,8 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import Optional
 
-from .types import GOLD_TARGET, GRID_SIZE, Position, orthogonal_neighbors
+from .planner import plan_action_cost
+from .types import Direction, GOLD_TARGET, GRID_SIZE, Position, orthogonal_neighbors
 
 
 @dataclass
@@ -47,7 +48,9 @@ class PythonKB:
     flash_at: set[Position] = field(default_factory=set)
     gold_seen: set[Position] = field(default_factory=set)
     powerup_seen: set[Position] = field(default_factory=set)
+    enemy_damage: dict[Position, int] = field(default_factory=dict)
     agent_pos: Position = (1, 1)
+    agent_dir: Direction = Direction.EAST
     exit_pos: Position = (1, 1)
     gold_carried: int = 0
     energy: int = 100
@@ -64,7 +67,9 @@ class PythonKB:
             self.gold_seen, self.powerup_seen,
         ):
             s.clear()
+        self.enemy_damage.clear()
         self.agent_pos = self.exit_pos
+        self.agent_dir = Direction.EAST
         self.gold_carried = 0
         self.energy = 100
 
@@ -79,6 +84,12 @@ class PythonKB:
 
     def set_agent_pos(self, pos: Position) -> None:
         self.agent_pos = pos
+
+    def set_agent_dir(self, direction: Direction | str) -> None:
+        if isinstance(direction, Direction):
+            self.agent_dir = direction
+        else:
+            self.agent_dir = Direction.parse(direction)
 
     def update_perception(self, pos: Position, percepts: list[str]) -> None:
         self.visited.add(pos)
@@ -207,7 +218,7 @@ class PythonKB:
             return
         self.powerup_seen.add(pos)
 
-    def note_enemy_here(self, pos: Position) -> None:
+    def note_enemy_here(self, pos: Position, damage: int | None = None) -> None:
         """Record that the agent took damage entering ``pos`` -- there is an
         enemy in this exact cell. The cell remains visited (we are standing
         in it), but it should no longer be picked as a transit-cell when a
@@ -215,6 +226,8 @@ class PythonKB:
         self.confirmed_enemy.add(pos)
         self.enemy_clear.discard(pos)
         self.risk_enemy.discard(pos)
+        if damage is not None and damage > 0:
+            self.enemy_damage[pos] = damage
 
     def note_teleporter_here(self, pos: Position) -> None:
         """Record a teleporter inferred from a forced displacement."""
@@ -300,7 +313,7 @@ class PythonKB:
             if pu_target is not None:
                 return "mover", pu_target
 
-        # 3) Expand the safe frontier (rank by path distance, then info gain).
+        # 3) Expand the safe frontier (rank by action cost, then info gain).
         #    Cells with no likely_safe path from the agent are dropped: picking
         #    them would force the planner into a hostile retrace.
         frontier = [
@@ -311,7 +324,7 @@ class PythonKB:
             target = min(
                 frontier,
                 key=lambda p: (
-                    self._safe_path_distance(p),
+                    self._safe_action_distance(p),
                     -self._info_gain(p),
                 ),
             )
@@ -360,7 +373,7 @@ class PythonKB:
             dist = self._safe_path_distance(cell)
             if dist == float("inf"):
                 continue
-            reachable.append((dist, cell))
+            reachable.append((self._safe_action_distance(cell), cell))
         if not reachable:
             return None
         reachable.sort()
@@ -377,6 +390,15 @@ class PythonKB:
         """BFS distance over known-safe cells; the goal itself is allowed
         even if it is only on the frontier (not yet visited)."""
         return self._path_distance(goal, self.likely_safe)
+
+    def _safe_action_distance(self, goal: Position) -> float:
+        return plan_action_cost(
+            self.agent_pos,
+            goal,
+            self.agent_dir,
+            self.likely_safe,
+            size=self.size,
+        )
 
     def _retrace_path_distance(self, goal: Position) -> float:
         """BFS distance over safe cells plus already-visited hostile cells."""
@@ -516,6 +538,9 @@ class PythonKB:
             "risky_frontier": self.risky_frontier(),
             "gold_seen": sorted(self.gold_seen),
             "powerup_seen": sorted(self.powerup_seen),
+            "enemy_damage": sorted(
+                (pos, damage) for pos, damage in self.enemy_damage.items()
+            ),
             "gold_carried": self.gold_carried,
             "energy": self.energy,
         }

@@ -7,6 +7,7 @@ Otherwise, the project falls back to :class:`pitfall.kb_python.PythonKB`.
 Both backends expose the same surface used by :mod:`pitfall.agent`:
     - :meth:`reset`
     - :meth:`set_agent_pos(pos)`
+    - :meth:`set_agent_dir(direction)`
     - :meth:`update_perception(pos, percepts)`
     - :meth:`mark_gold_taken(pos)`
     - :meth:`note_teleporter_here(pos)`
@@ -29,7 +30,7 @@ from pathlib import Path
 from typing import Optional, Protocol
 
 from .kb_python import PythonKB
-from .types import GRID_SIZE, Position
+from .types import Direction, GRID_SIZE, Position
 
 logger = logging.getLogger(__name__)
 
@@ -42,11 +43,12 @@ class KnowledgeBase(Protocol):
     backend: str
     def reset(self) -> None: ...
     def set_agent_pos(self, pos: Position) -> None: ...
+    def set_agent_dir(self, direction: Direction | str) -> None: ...
     def set_energy(self, energy: int) -> None: ...
     def update_perception(self, pos: Position, percepts: list[str]) -> None: ...
     def mark_gold_taken(self, pos: Position) -> None: ...
     def note_powerup_taken(self, pos: Position) -> None: ...
-    def note_enemy_here(self, pos: Position) -> None: ...
+    def note_enemy_here(self, pos: Position, damage: int | None = None) -> None: ...
     def note_teleporter_here(self, pos: Position) -> None: ...
     def likely_safe(self, pos: Position) -> bool: ...
     def walkable_for_path(self, pos: Position) -> bool: ...
@@ -130,6 +132,10 @@ class SwiPrologKB:
     def set_agent_pos(self, pos: Position) -> None:
         self._do(f"set_agent_pos({_pos(pos)})")
 
+    def set_agent_dir(self, direction: Direction | str) -> None:
+        raw = direction.value if isinstance(direction, Direction) else str(direction)
+        self._do(f"set_agent_dir({raw})")
+
     def set_energy(self, energy: int) -> None:
         self._do(f"set_energy({int(energy)})")
 
@@ -147,8 +153,11 @@ class SwiPrologKB:
     def note_powerup_taken(self, pos: Position) -> None:
         self._do(f"note_powerup_taken({_pos(pos)})")
 
-    def note_enemy_here(self, pos: Position) -> None:
-        self._do(f"note_enemy_here({_pos(pos)})")
+    def note_enemy_here(self, pos: Position, damage: int | None = None) -> None:
+        if damage is None:
+            self._do(f"note_enemy_here({_pos(pos)})")
+        else:
+            self._do(f"note_enemy_here({_pos(pos)}, {int(damage)})")
 
     def note_teleporter_here(self, pos: Position) -> None:
         self._do(f"note_teleporter_here({_pos(pos)})")
@@ -207,6 +216,10 @@ class SwiPrologKB:
             ],
             "gold_seen": [_parse_pos(p) for p in self._query("gold_seen(P)", "P")],
             "powerup_seen": [_parse_pos(p) for p in self._query("powerup_seen(P)", "P")],
+            "enemy_damage": [
+                _parse_pos_int_pair(p)
+                for p in self._query("enemy_damage(P, D)", "P-D")
+            ],
             "gold_carried": _parse_int(self._query("gold_carried(N)", "N")),
             "energy": _parse_int(self._query("agent_energy(N)", "N")),
         }
@@ -264,6 +277,13 @@ def _parse_int(sols: list[str]) -> int:
         return int(sols[0])
     except ValueError:
         return 0
+
+
+def _parse_pos_int_pair(text: str) -> tuple[Position, int]:
+    m = re.match(r"\s*(\d+)\s*/\s*(\d+)\s*-\s*(\d+)\s*$", text)
+    if not m:
+        raise ValueError(f"Cannot parse position/integer pair from {text!r}")
+    return (int(m.group(1)), int(m.group(2))), int(m.group(3))
 
 
 def _split_top_level(body: str) -> list[str]:
