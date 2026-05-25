@@ -253,13 +253,7 @@ class Environment:
             if depth >= self.size * self.size:
                 result["message"] = "teletransporte em cadeia interrompido"
                 return result
-            destinations = [
-                p for p in all_positions(self.size)
-                if p != self.agent_pos
-                and get_cell(self._grid, p) in (CellType.EMPTY, CellType.GOLD, CellType.POWERUP)
-            ]
-            if not destinations:
-                destinations = [p for p in all_positions(self.size) if p != self.agent_pos]
+            destinations = [p for p in all_positions(self.size) if p != self.agent_pos]
             new_pos = self._rng.choice(destinations)
             self.agent_pos = new_pos
             inner = self._enter_cell(new_pos, depth + 1)
