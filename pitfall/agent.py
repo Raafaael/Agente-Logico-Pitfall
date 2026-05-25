@@ -156,6 +156,7 @@ class Agent:
         active = percept.as_list()
         self.kb.update_perception(pos, active)
         self._invalidate_kb_cache()
+        self._release_safe_blocks()
         if (
             self.state.last_action == Action.WALK
             and energy < previous_energy
@@ -199,6 +200,16 @@ class Agent:
                 self.state.blocked_cells.add(origin)
         self.state.pending.clear()
         self._invalidate_kb_cache()
+
+    def _release_safe_blocks(self) -> None:
+        """Remove bloqueios temporarios que a KB ja provou serem seguros."""
+        releasable = {
+            cell
+            for cell in self.state.blocked_cells
+            if cell not in self.state.teleporter_cells and self.kb.likely_safe(cell)
+        }
+        if releasable:
+            self.state.blocked_cells -= releasable
 
     def decide_action(self) -> Action:
         """Calcula e registra a acao escolhida para o turno.
@@ -477,6 +488,8 @@ class Agent:
             candidates |= powerup_seen
         candidates |= gold_seen
         candidates.discard(self.state.pos)
+        candidates -= self.state.teleporter_cells
+        candidates -= self.state.blocked_cells
         candidates -= banned
         candidates -= self.state.unreachable_targets
 

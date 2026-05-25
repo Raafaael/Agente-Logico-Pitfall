@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import random
 import sys
 import time
 from pathlib import Path
@@ -90,7 +91,8 @@ def main(argv: list[str] | None = None) -> int:
         print("[mapa] elementos:", count_elements(grid))
 
     env = Environment(grid, start=start, initial_direction=direction,
-                      initial_energy=INITIAL_ENERGY)
+                      initial_energy=INITIAL_ENERGY,
+                      rng=random.Random(args.seed) if args.seed is not None else None)
     agent = Agent(kb_backend=args.kb, start=start, initial_direction=direction)
     if not args.quiet:
         print(f"[kb] backend={agent.backend_label}")
