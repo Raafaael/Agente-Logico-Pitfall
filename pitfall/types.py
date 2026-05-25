@@ -92,11 +92,11 @@ class Direction(str, Enum):
 
     def turn_right(self) -> "Direction":
         order = [Direction.NORTH, Direction.EAST, Direction.SOUTH, Direction.WEST]
-        return order[(order.index(self) + 1) % 4]
+        return order[(order.index(self) - 1) % 4]
 
     def turn_left(self) -> "Direction":
         order = [Direction.NORTH, Direction.EAST, Direction.SOUTH, Direction.WEST]
-        return order[(order.index(self) - 1) % 4]
+        return order[(order.index(self) + 1) % 4]
 
     @property
     def short(self) -> str:

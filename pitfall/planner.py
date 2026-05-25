@@ -109,7 +109,7 @@ def _align_actions(cur: Direction, target: Direction) -> list[Action]:
     order = [Direction.NORTH, Direction.EAST, Direction.SOUTH, Direction.WEST]
     delta = (order.index(target) - order.index(cur)) % 4
     if delta == 1:
-        return [Action.TURN_RIGHT]
-    if delta == 3:
         return [Action.TURN_LEFT]
-    return [Action.TURN_RIGHT, Action.TURN_RIGHT]
+    if delta == 3:
+        return [Action.TURN_RIGHT]
+    return [Action.TURN_LEFT, Action.TURN_LEFT]
