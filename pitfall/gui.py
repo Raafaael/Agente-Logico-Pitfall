@@ -329,6 +329,11 @@ class PitfallGUI:
         self.last_energy_delta = 0
         self.last_score_delta = 0
         self._append_log(f"Novo jogo: {source_name} | elementos={count_elements(grid)}")
+        if agent.fallback_reason:
+            self._append_log(
+                f"Fallback ativo: SWI-Prolog indisponivel ({agent.fallback_reason}); "
+                "usando backend Python."
+            )
         self._observe_current()
         self._refresh()
 
@@ -681,7 +686,7 @@ class PitfallGUI:
             "Acao": self.last_action,
             "Delta E/S": f"{self.last_energy_delta:+d} / {self.last_score_delta:+d}",
             "Evento": self._status_message(),
-            "Backend": self.agent.backend,
+            "Backend": self.agent.backend_label,
         }
         for key, value in values.items():
             self.status_vars[key].set(value)

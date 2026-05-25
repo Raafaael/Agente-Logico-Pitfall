@@ -93,7 +93,9 @@ def main(argv: list[str] | None = None) -> int:
                       initial_energy=INITIAL_ENERGY)
     agent = Agent(kb_backend=args.kb, start=start, initial_direction=direction)
     if not args.quiet:
-        print(f"[kb] backend={agent.backend}")
+        print(f"[kb] backend={agent.backend_label}")
+        if agent.fallback_reason:
+            print(f"[kb] fallback: SWI-Prolog indisponivel ({agent.fallback_reason})")
         print(LEGEND)
         print()
 
@@ -159,7 +161,9 @@ def print_final(env: Environment, agent: Agent, args) -> None:
     print(f"ouros        : {env.gold_collected}/3")
     print(f"powerups     : {env.powerups_taken}/3")
     print(f"acoes feitas : {env.steps}")
-    print(f"backend kb   : {agent.backend}")
+    print(f"backend kb   : {agent.backend_label}")
+    if agent.fallback_reason:
+        print(f"fallback     : {agent.fallback_reason}")
 
 
 if __name__ == "__main__":

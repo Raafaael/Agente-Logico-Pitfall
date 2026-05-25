@@ -53,6 +53,8 @@ class PythonKB:
     gold_carried: int = 0
 
     backend: str = "python"
+    fallback_from: str | None = None
+    fallback_reason: str | None = None
 
     _energy_low: int = field(default=INITIAL_ENERGY // 2, init=False, repr=False)
 

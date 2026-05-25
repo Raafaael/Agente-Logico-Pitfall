@@ -312,4 +312,7 @@ def make_kb(prefer: str = "auto") -> KnowledgeBase:
         return SwiPrologKB()
     except (PrologUnavailable, FileNotFoundError) as exc:
         logger.debug("SWI-Prolog unavailable (%s); using Python KB fallback", exc)
-        return PythonKB()
+        kb = PythonKB()
+        kb.fallback_from = "swi-prolog"
+        kb.fallback_reason = str(exc)
+        return kb

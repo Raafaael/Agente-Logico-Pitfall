@@ -71,7 +71,13 @@ Mapa Prolog/manual:
 py main.py --map maps/mapa.pl
 ```
 
-Forcar fallback Python:
+Forcar SWI-Prolog, falhando se `swipl` nao estiver instalado:
+
+```bash
+py main.py --kb prolog --map maps/mapa.pl
+```
+
+Forcar backend Python:
 
 ```bash
 py main.py --kb python --map maps/mapa.pl
@@ -101,6 +107,10 @@ Atalhos:
 - seta esquerda/direita: virar;
 - espaco: pegar;
 - Enter: passo automatico do agente.
+
+Na GUI tambem existe o botao `Sair`. A saida e voluntaria: passar pela casa
+`[1,1]` nao encerra o jogo automaticamente; o jogo so termina quando a acao
+`sair` e executada enquanto o personagem esta na posicao inicial/saida.
 
 ## Formatos de Mapa
 
@@ -165,10 +175,29 @@ Mapas `.pl` no formato `tile(X, Y, 'O').` tambem sao carregados.
 - Pontuacao por acao, ouro, poco e morte.
 - Powerup recupera energia automaticamente ao entrar na sala.
 - Teletransporte pode cair em qualquer outra sala, inclusive perigo.
+- Sair do labirinto e uma acao explicita na posicao `[1,1]`; atravessar a
+  saida sem executar `sair` nao termina a partida.
 - Agente nao consulta o mapa real para decidir.
 - A* roda em Python sobre salas conhecidas/seguras.
 - Prolog representa conhecimento e tomada de decisao quando `swipl` existe.
 - Fallback Python mantem o projeto executavel sem SWI-Prolog instalado.
+
+## Backend e Fallback
+
+O argumento `--kb` controla qual base de conhecimento o agente usa:
+
+- `--kb auto` tenta iniciar o SWI-Prolog primeiro. Se o executavel `swipl` nao
+  estiver no PATH ou a KB Prolog nao puder ser carregada, o jogo usa
+  automaticamente a KB Python equivalente e mostra `python (fallback de
+  swi-prolog)` no resultado.
+- `--kb prolog` exige SWI-Prolog. Use este modo para apresentacao/avaliacao,
+  pois ele falha explicitamente se o Prolog nao estiver disponivel.
+- `--kb python` usa diretamente a KB Python. Este modo existe para testes em
+  maquinas sem SWI-Prolog e replica as mesmas regras de inferencia usadas em
+  `knowledge_base.pl`.
+
+O fallback nao revela o mapa real ao agente. Ele substitui apenas o motor de
+inferencia/tomada de decisao quando o processo `swipl` nao pode ser iniciado.
 
 ## Melhorias Ja Incluidas
 

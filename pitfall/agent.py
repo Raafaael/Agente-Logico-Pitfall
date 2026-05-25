@@ -115,6 +115,20 @@ class Agent:
         """
         return getattr(self.kb, "backend", "unknown")
 
+    @property
+    def backend_label(self) -> str:
+        """Label amigavel para mostrar quando Python esta atuando como fallback."""
+        backend = self.backend
+        fallback_from = getattr(self.kb, "fallback_from", None)
+        if fallback_from:
+            return f"{backend} (fallback de {fallback_from})"
+        return backend
+
+    @property
+    def fallback_reason(self) -> str | None:
+        """Motivo do fallback automatico, quando houver."""
+        return getattr(self.kb, "fallback_reason", None)
+
     def observe(self, percept: Percept, pos: Position, direction: Direction,
                 energy: int, score: int) -> None:
         """Atualiza o estado interno com a percepcao do turno.
