@@ -84,19 +84,19 @@ class Direction(str, Enum):
     @property
     def delta(self) -> Tuple[int, int]:
         return {
-            Direction.NORTH: (-1, 0),
-            Direction.EAST: (0, 1),
-            Direction.SOUTH: (1, 0),
-            Direction.WEST: (0, -1),
+            Direction.NORTH: (0, 1),
+            Direction.EAST: (1, 0),
+            Direction.SOUTH: (0, -1),
+            Direction.WEST: (-1, 0),
         }[self]
 
     def turn_right(self) -> "Direction":
         order = [Direction.NORTH, Direction.EAST, Direction.SOUTH, Direction.WEST]
-        return order[(order.index(self) - 1) % 4]
+        return order[(order.index(self) + 1) % 4]
 
     def turn_left(self) -> "Direction":
         order = [Direction.NORTH, Direction.EAST, Direction.SOUTH, Direction.WEST]
-        return order[(order.index(self) + 1) % 4]
+        return order[(order.index(self) - 1) % 4]
 
     @property
     def short(self) -> str:
@@ -169,15 +169,15 @@ class StepResult:
 
 
 def in_bounds(pos: Position, size: int = GRID_SIZE) -> bool:
-    r, c = pos
-    return 1 <= r <= size and 1 <= c <= size
+    x, y = pos
+    return 1 <= x <= size and 1 <= y <= size
 
 
 def orthogonal_neighbors(pos: Position, size: int = GRID_SIZE) -> list[Position]:
-    r, c = pos
+    x, y = pos
     out = []
-    for dr, dc in ((-1, 0), (1, 0), (0, -1), (0, 1)):
-        nr, nc = r + dr, c + dc
-        if 1 <= nr <= size and 1 <= nc <= size:
-            out.append((nr, nc))
+    for dx, dy in ((0, 1), (1, 0), (0, -1), (-1, 0)):
+        nx, ny = x + dx, y + dy
+        if 1 <= nx <= size and 1 <= ny <= size:
+            out.append((nx, ny))
     return out

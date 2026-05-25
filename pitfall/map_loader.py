@@ -26,17 +26,17 @@ def empty_grid(size: int = GRID_SIZE) -> Grid:
 
 
 def get_cell(grid: Grid, pos: Position) -> CellType:
-    r, c = pos
-    return grid[r - 1][c - 1]
+    x, y = pos
+    return grid[len(grid) - y][x - 1]
 
 
 def set_cell(grid: Grid, pos: Position, ct: CellType) -> None:
-    r, c = pos
-    grid[r - 1][c - 1] = ct
+    x, y = pos
+    grid[len(grid) - y][x - 1] = ct
 
 
 def all_positions(size: int = GRID_SIZE) -> list[Position]:
-    return [(r, c) for r in range(1, size + 1) for c in range(1, size + 1)]
+    return [(x, y) for x in range(1, size + 1) for y in range(1, size + 1)]
 
 
 def generate_random_map(
@@ -148,9 +148,10 @@ def load_map_from_file(path: str | Path) -> tuple[Grid, dict]:
 def _load_prolog_map(text: str) -> tuple[Grid, dict]:
     """Parse a `tile(X, Y, 'Z').`-style map (the legacy reference format).
 
-    The provided `.pl` maps use `tile(X, Y, Symbol)`, where X is the column
-    from left to right and Y is the line from bottom to top. The project uses
-    `(row, col)` with row 1 at the top, so `tile(1, 12, ...)` becomes `(1, 1)`.
+    Legacy uses cartesian coordinates with Y=1 at the bottom and Y=12 at
+    the top, and the agent starts at `posicao(1, 1, norte)`. The project
+    now uses the same public coordinate system, while `get_cell`/`set_cell`
+    translate that to the matrix rows internally.
     """
     size_match = re.search(r"map_size\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)", text)
     size = int(size_match.group(1)) if size_match else GRID_SIZE
@@ -159,13 +160,11 @@ def _load_prolog_map(text: str) -> tuple[Grid, dict]:
     pattern = re.compile(r"tile\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*'([^']*)'\s*\)")
     for match in pattern.finditer(text):
         x, y, sym = int(match.group(1)), int(match.group(2)), match.group(3)
-        row = size + 1 - y
-        col = x
         cell = CellType.from_symbol(sym if sym else ".")
-        set_cell(grid, (row, col), cell)
+        set_cell(grid, (x, y), cell)
 
-    legacy_start: Position = (1, 1)
-    validate_map(grid, legacy_start, allow_start_items=True)
+    legacy_start: Position = START_POS
+    validate_map(grid, legacy_start)
     return grid, {
         "start": legacy_start,
         "initial_direction": Direction.NORTH,

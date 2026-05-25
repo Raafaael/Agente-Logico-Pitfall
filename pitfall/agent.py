@@ -251,6 +251,13 @@ class Agent:
                     self.state.returning_to_exit = False
                     self.state.last_decision = ("sair", None)
                     return Action.EXIT
+                late_corner = self._late_risky_corner_target()
+                if late_corner is not None:
+                    self.state.returning_to_exit = False
+                    action = self._move_toward(late_corner)
+                    if action is not None:
+                        self.state.last_decision = ("canto_ultimo_ouro", late_corner)
+                        return action
                 detour = self._best_return_detour()
                 if detour is not None:
                     action = self._move_toward(detour)
@@ -282,6 +289,12 @@ class Agent:
                 return Action.EXIT
             action = self._move_toward(self.exit_pos)
             if action is not None:
+                return action
+        late_corner = self._late_risky_corner_target()
+        if late_corner is not None:
+            action = self._move_toward(late_corner)
+            if action is not None:
+                self.state.last_decision = ("canto_ultimo_ouro", late_corner)
                 return action
         kind, target = self.kb.decide()
         self.state.last_decision = (kind, target)
@@ -332,10 +345,16 @@ class Agent:
         actions = self._plan_path(target)
         if actions and actions[0] == Action.WALK and self.state.last_percept:
             forward = self._forward_pos()
+            pursuing_late_risky_target = (
+                forward == target
+                and self.state.gold_carried >= GOLD_TARGET - 1
+                and self.kb.is_risky(target)
+            )
             if (
                 target != self.exit_pos
                 and self.state.last_percept.breeze
                 and self.kb.is_risky(forward)
+                and not pursuing_late_risky_target
             ):
                 self.state.blocked_cells.add(forward)
                 right = self._neighbor_in_direction(self.state.direction.turn_right())
@@ -458,6 +477,46 @@ class Agent:
                 best = cell
         return best
 
+    def _late_risky_corner_target(self) -> Optional[Position]:
+        """Prioriza cantos arriscados quando falta apenas um ouro.
+
+        Alguns mapas escondem ouro em uma casa que continua suspeita por ficar
+        ao lado de um poco. Depois de coletar dois ouros, essa regra evita que
+        o agente gaste o fim do jogo circulando por riscos menos promissores.
+        """
+        if self.state.gold_carried < GOLD_TARGET - 1:
+            return None
+        snapshot = self._snapshot()
+        if snapshot.get("gold_seen"):
+            return None
+
+        visited = set(map(tuple, snapshot.get("visited", [])))
+        risky = set(map(tuple, snapshot.get("risky_frontier", [])))
+        confirmed_pit = set(map(tuple, snapshot.get("confirmed_pit", [])))
+        candidates = [
+            cell
+            for cell in risky
+            if self._is_corner(cell)
+            and cell not in visited
+            and cell not in confirmed_pit
+            and cell not in self.state.blocked_cells
+            and cell not in self.state.unreachable_targets
+        ]
+        if not candidates:
+            return None
+
+        reachable: list[tuple[int, Position]] = []
+        for cell in candidates:
+            path = astar(self.state.pos, cell, self._is_walkable, size=self.size)
+            if path is None:
+                continue
+            actions = path_to_actions(path, self.state.direction)
+            if actions:
+                reachable.append((len(actions), cell))
+        if not reachable:
+            return None
+        return min(reachable)[1]
+
     def _best_exploration_target(
         self,
         snapshot: Optional[dict] = None,
@@ -518,6 +577,12 @@ class Agent:
                 score += 2000
             if cell in powerup_seen:
                 score += 160 + POWERUP_ENERGY_GAIN
+            if (
+                self.state.gold_carried >= GOLD_TARGET - 1
+                and cell in risky_frontier
+                and self._is_corner(cell)
+            ):
+                score += 1800
             if cell in safe_frontier:
                 score += 30
             else:
@@ -577,6 +642,11 @@ class Agent:
         demais quando o retorno ja comeca a importar.
         """
         return abs(pos[0] - self.exit_pos[0]) + abs(pos[1] - self.exit_pos[1])
+
+    def _is_corner(self, pos: Position) -> bool:
+        """Indica se uma posicao fica em um canto do tabuleiro."""
+        x, y = pos
+        return x in (1, self.size) and y in (1, self.size)
 
     def _energy_margin_after(self, target: Position, travel_cost: int) -> int:
         """Estima quanta energia sobraria apos visitar a meta e voltar.

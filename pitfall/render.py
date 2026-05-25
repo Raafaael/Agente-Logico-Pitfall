@@ -1,7 +1,7 @@
 """Terminal renderer for the agent + environment."""
 from __future__ import annotations
 
-from .map_loader import Grid
+from .map_loader import Grid, get_cell
 from .types import CellType, Direction, GRID_SIZE, Position
 
 
@@ -27,7 +27,7 @@ def render_world(grid: Grid, agent_pos: Position, agent_dir: Direction,
                  reveal: bool = False, kb_snapshot: dict | None = None) -> str:
     size = len(grid)
     lines: list[str] = []
-    header = "    " + " ".join(f"{c:>2}" for c in range(1, size + 1))
+    header = "    " + " ".join(f"{x:>2}" for x in range(1, size + 1))
     lines.append(header)
     lines.append("   +" + "---" * size + "+")
     snapshot = kb_snapshot or {}
@@ -39,14 +39,14 @@ def render_world(grid: Grid, agent_pos: Position, agent_dir: Direction,
     confirmed_pit = set(map(tuple, snapshot.get("confirmed_pit", [])))
     confirmed_enemy = set(map(tuple, snapshot.get("confirmed_enemy", [])))
     confirmed_tele = set(map(tuple, snapshot.get("confirmed_teleport", [])))
-    for r in range(1, size + 1):
+    for y in range(size, 0, -1):
         cells: list[str] = []
-        for c in range(1, size + 1):
-            pos = (r, c)
+        for x in range(1, size + 1):
+            pos = (x, y)
             if pos == agent_pos:
                 glyph = _DIR_GLYPH[agent_dir]
             elif reveal:
-                glyph = _CELL_GLYPH[grid[r - 1][c - 1]]
+                glyph = _CELL_GLYPH[get_cell(grid, pos)]
             elif pos in visited or pos in safe:
                 glyph = _glyph_for_known(grid, pos) if reveal else _knowledge_glyph(
                     pos, visited, safe, risk_pit, risk_enemy, risk_tele,
@@ -58,13 +58,13 @@ def render_world(grid: Grid, agent_pos: Position, agent_dir: Direction,
                     confirmed_pit, confirmed_enemy, confirmed_tele
                 )
             cells.append(f" {glyph} ")
-        lines.append(f"{r:>2} |" + "".join(cells) + "|")
+        lines.append(f"{y:>2} |" + "".join(cells) + "|")
     lines.append("   +" + "---" * size + "+")
     return "\n".join(lines)
 
 
 def _glyph_for_known(grid: Grid, pos: Position) -> str:
-    return _CELL_GLYPH[grid[pos[0] - 1][pos[1] - 1]]
+    return _CELL_GLYPH[get_cell(grid, pos)]
 
 
 def _knowledge_glyph(pos, visited, safe, risk_pit, risk_enemy, risk_tele,

@@ -285,9 +285,9 @@ class PitfallGUI:
         powerup_seen = set(map(tuple, snapshot.get("powerup_seen", [])))
         enemy_damage = dict(snapshot.get("enemy_damage", []))
 
-        for r in range(1, size + 1):
-            for c in range(1, size + 1):
-                pos = (r, c)
+        for x in range(1, size + 1):
+            for y in range(1, size + 1):
+                pos = (x, y)
                 is_known = (
                     pos in visited
                     or pos in safe
@@ -323,9 +323,9 @@ class PitfallGUI:
         self._draw_image(player_key, self.env.agent_pos)
 
     def _draw_image(self, key: str, pos: tuple[int, int]) -> None:
-        r, c = pos
-        x = (c - 1) * CELL_SIZE
-        y = (r - 1) * CELL_SIZE
+        pos_x, pos_y = pos
+        x = (pos_x - 1) * CELL_SIZE
+        y = (self.env.size - pos_y) * CELL_SIZE if self.env is not None else 0
         img = self.images.get(key)
         if img is None:
             fill = "#243024" if key == "floor" else "#5a4030"
