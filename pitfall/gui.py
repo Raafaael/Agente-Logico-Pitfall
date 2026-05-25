@@ -52,6 +52,7 @@ class PitfallGUI:
 
         self.root = tk.Tk()
         self.root.title("Agente Logico Pitfall - INF1771")
+        self.root.configure(bg="#000000")
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
         self.reveal_var = tk.BooleanVar(value=config.reveal)
@@ -106,7 +107,7 @@ class PitfallGUI:
             board_frame,
             width=size_px,
             height=size_px,
-            bg="#101612",
+            bg="#000000",
             highlightthickness=0,
         )
         self.canvas.grid(row=0, column=0, sticky="nsew")
@@ -251,6 +252,7 @@ class PitfallGUI:
         names = {
             "floor": "floor.png",
             "unknown": "bw_floor.png",
+            "floor_inferred": "bw_floor.png",
             "pit": "pit.png",
             "enemy_small": "enemy1.png",
             "enemy_big": "enemy2.png",
@@ -546,6 +548,8 @@ class PitfallGUI:
         confirmed_enemy = set(map(tuple, snapshot.get("confirmed_enemy", [])))
         confirmed_tele = set(map(tuple, snapshot.get("confirmed_teleport", [])))
         gold_seen = set(map(tuple, snapshot.get("gold_seen", [])))
+        powerup_seen = set(map(tuple, snapshot.get("powerup_seen", [])))
+        enemy_damage = dict(snapshot.get("enemy_damage", []))
 
         for r in range(1, len(grid) + 1):
             for c in range(1, len(grid) + 1):
@@ -563,6 +567,8 @@ class PitfallGUI:
                     confirmed_enemy,
                     confirmed_tele,
                     gold_seen,
+                    powerup_seen,
+                    enemy_damage,
                 )
 
         player_key = _player_image_key(self.env.agent_dir)
@@ -591,6 +597,8 @@ class PitfallGUI:
         confirmed_enemy: set[tuple[int, int]],
         confirmed_tele: set[tuple[int, int]],
         gold_seen: set[tuple[int, int]],
+        powerup_seen: set[tuple[int, int]],
+        enemy_damage: dict[tuple[int, int], int],
     ) -> None:
         """Desenha uma unica celula do tabuleiro.
 
@@ -605,47 +613,50 @@ class PitfallGUI:
 
         if self.reveal_var.get():
             self._draw_image(_cell_image_key(cell), pos)
-        elif pos in visited:
-            self._draw_image("floor", pos)
-            self.canvas.create_text(x0 + 8, y0 + 8, text="o", fill="#eef2d0", anchor="nw")
-        elif pos in confirmed_pit or pos in confirmed_enemy or pos in confirmed_tele:
-            self.canvas.create_rectangle(x0, y0, x1, y1, fill="#1e1212", outline="")
-            label = "P"
-            if pos in confirmed_enemy:
-                label = "X"
-            elif pos in confirmed_tele:
-                label = "T"
-            self.canvas.create_text(x0 + CELL_SIZE / 2, y0 + CELL_SIZE / 2,
-                                    text=label, fill="#ff6961",
-                                    font=("Segoe UI", 14, "bold"))
-        elif pos in safe:
-            self._draw_image("unknown", pos)
-            self.canvas.create_rectangle(x0, y0, x1, y1, fill="#203527", stipple="gray50")
-            self.canvas.create_text(x0 + CELL_SIZE / 2, y0 + CELL_SIZE / 2,
-                                    text="s", fill="#d9f5c4", font=("Segoe UI", 14, "bold"))
         else:
-            self.canvas.create_rectangle(x0, y0, x1, y1, fill="#101612", outline="")
-            label = "?"
-            color = "#6f806f"
-            risks = []
-            if pos in risk_pit:
-                risks.append("p")
-            if pos in risk_enemy:
-                risks.append("i")
-            if pos in risk_tele:
-                risks.append("t")
-            if risks:
-                label = "!" if len(risks) > 1 else risks[0]
-                color = "#ffb15c"
-            self.canvas.create_text(x0 + CELL_SIZE / 2, y0 + CELL_SIZE / 2,
-                                    text=label, fill=color, font=("Segoe UI", 13, "bold"))
+            known = (
+                pos in visited
+                or pos in safe
+                or pos in confirmed_pit
+                or pos in confirmed_enemy
+                or pos in confirmed_tele
+                or pos in gold_seen
+                or pos in powerup_seen
+                or pos in risk_pit
+                or pos in risk_enemy
+                or pos in risk_tele
+            )
+            if not known:
+                self.canvas.create_rectangle(x0, y0, x1, y1, fill="#000000", outline="")
+                return
 
-        if pos in gold_seen and not self.reveal_var.get():
-            self.canvas.create_text(x0 + CELL_SIZE - 8, y0 + 8, text="O",
-                                    fill="#ffd761", anchor="ne",
-                                    font=("Segoe UI", 13, "bold"))
+            base = "floor" if pos in visited else "floor_inferred"
+            self._draw_image(base, pos)
 
-        self.canvas.create_rectangle(x0, y0, x1, y1, outline="#253128")
+            if pos in confirmed_pit:
+                self._draw_image("pit", pos)
+            elif pos in confirmed_enemy:
+                damage = enemy_damage.get(pos)
+                enemy_key = (
+                    "enemy_big" if damage is not None and damage >= 50
+                    else "enemy_small"
+                )
+                self._draw_image(enemy_key, pos)
+            elif pos in confirmed_tele:
+                self._draw_image("teleporter", pos)
+            elif pos in gold_seen:
+                self._draw_image("gold", pos)
+            elif pos in powerup_seen:
+                self._draw_image("powerup", pos)
+            elif pos in risk_pit or pos in risk_enemy or pos in risk_tele:
+                self.canvas.create_rectangle(
+                    x0, y0, x1, y1,
+                    fill="#000000",
+                    outline="#3a2c14",
+                    stipple="gray50",
+                )
+
+        self.canvas.create_rectangle(x0, y0, x1, y1, outline="#1a1a1a")
 
     def _draw_image(self, key: str, pos: tuple[int, int]) -> None:
         """Desenha uma imagem na celula indicada.
