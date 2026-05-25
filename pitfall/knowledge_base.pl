@@ -319,6 +319,7 @@ mark_powerup_taken(Pos):- retractall(powerup_seen(Pos)).
 set_agent_pos(P)    :- retractall(agent_pos(_)),    assertz(agent_pos(P)).
 set_agent_dir(D)    :- retractall(agent_dir(_)),    assertz(agent_dir(D)).
 set_agent_energy(E) :- retractall(agent_energy(_)), assertz(agent_energy(E)).
+set_agent_state(P, E) :- set_agent_pos(P), set_agent_energy(E).
 set_exit(P)         :- retractall(exit_pos(_)),     assertz(exit_pos(P)).
 
 inc_gold :-
@@ -328,6 +329,22 @@ inc_gold :-
 is_visited(Pos)    :- visited(Pos).
 is_known_gold(Pos) :- gold_seen(Pos).
 is_risky(Pos)      :- risky(Pos).
+
+snapshot_data(snapshot(Visited, Safe, RiskPit, RiskEnemy, RiskTeleport,
+                       ConfirmedPit, ConfirmedEnemy, ConfirmedTeleport,
+                       RiskyFrontier, GoldSeen, PowerupSeen, GoldCarried)) :-
+    findall(P, visited(P), V0), sort(V0, Visited),
+    findall(P, likely_safe(P), S0), sort(S0, Safe),
+    findall(P, risk_pit(P), RP0), sort(RP0, RiskPit),
+    findall(P, risk_enemy(P), RE0), sort(RE0, RiskEnemy),
+    findall(P, risk_teleport(P), RT0), sort(RT0, RiskTeleport),
+    findall(P, confirmed_pit(P), CP0), sort(CP0, ConfirmedPit),
+    findall(P, confirmed_enemy(P), CE0), sort(CE0, ConfirmedEnemy),
+    findall(P, confirmed_teleport(P), CT0), sort(CT0, ConfirmedTeleport),
+    findall(P, risky_frontier(P), RF0), sort(RF0, RiskyFrontier),
+    findall(P, gold_seen(P), G0), sort(G0, GoldSeen),
+    findall(P, powerup_seen(P), PU0), sort(PU0, PowerupSeen),
+    gold_carried(GoldCarried).
 
 reset_kb :-
     retractall(memory(_, _)),

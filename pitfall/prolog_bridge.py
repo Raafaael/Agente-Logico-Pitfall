@@ -41,6 +41,7 @@ class KnowledgeBase(Protocol):
     def reset(self) -> None: ...
     def set_agent_pos(self, pos: Position) -> None: ...
     def set_agent_energy(self, energy: int) -> None: ...
+    def set_agent_state(self, pos: Position, energy: int) -> None: ...
     def update_perception(self, pos: Position, percepts: list[str]) -> None: ...
     def mark_gold_taken(self, pos: Position) -> None: ...
     def mark_powerup_taken(self, pos: Position) -> None: ...
@@ -127,6 +128,9 @@ class SwiPrologKB:
     def set_agent_energy(self, energy: int) -> None:
         self._do(f"set_agent_energy({energy})")
 
+    def set_agent_state(self, pos: Position, energy: int) -> None:
+        self._do(f"set_agent_state({_pos(pos)}, {energy})")
+
     def update_perception(self, pos: Position, percepts: list[str]) -> None:
         plist = "[" + ",".join(percepts) + "]"
         self._do(f"update_perception({_pos(pos)}, {plist})")
@@ -169,6 +173,9 @@ class SwiPrologKB:
         return "sair", None
 
     def snapshot(self) -> dict:
+        compact = self._compact_snapshot()
+        if compact is not None:
+            return compact
         return {
             "visited": [_parse_pos(p) for p in self._query("visited(P)", "P")],
             "safe": [_parse_pos(p) for p in self._query("likely_safe(P)", "P")],
@@ -191,6 +198,12 @@ class SwiPrologKB:
             "powerup_seen": [_parse_pos(p) for p in self._query("powerup_seen(P)", "P")],
             "gold_carried": _parse_int(self._query("gold_carried(N)", "N")),
         }
+
+    def _compact_snapshot(self) -> Optional[dict]:
+        sols = self._query("snapshot_data(S)", "S")
+        if not sols:
+            return None
+        return _parse_snapshot_term(sols[0])
 
     def close(self) -> None:
         try:
@@ -251,6 +264,36 @@ def _split_top_level(body: str) -> list[str]:
     if cur:
         out.append("".join(cur).strip())
     return [c for c in out if c]
+
+
+def _parse_pos_list(text: str) -> list[Position]:
+    text = text.strip()
+    if text == "[]":
+        return []
+    return [_parse_pos(part) for part in _split_top_level(text)]
+
+
+def _parse_snapshot_term(text: str) -> Optional[dict]:
+    text = text.strip()
+    if not text.startswith("snapshot(") or not text.endswith(")"):
+        return None
+    fields = _split_top_level(text[len("snapshot("):-1])
+    if len(fields) != 12:
+        return None
+    return {
+        "visited": _parse_pos_list(fields[0]),
+        "safe": _parse_pos_list(fields[1]),
+        "risk_pit": _parse_pos_list(fields[2]),
+        "risk_enemy": _parse_pos_list(fields[3]),
+        "risk_teleport": _parse_pos_list(fields[4]),
+        "confirmed_pit": _parse_pos_list(fields[5]),
+        "confirmed_enemy": _parse_pos_list(fields[6]),
+        "confirmed_teleport": _parse_pos_list(fields[7]),
+        "risky_frontier": _parse_pos_list(fields[8]),
+        "gold_seen": _parse_pos_list(fields[9]),
+        "powerup_seen": _parse_pos_list(fields[10]),
+        "gold_carried": _parse_int([fields[11]]),
+    }
 
 
 def make_kb(prefer: str = "auto") -> KnowledgeBase:

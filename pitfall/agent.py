@@ -70,12 +70,41 @@ class Agent:
         self.size = size
         self.exit_pos = start
         self.state = AgentState(pos=start, direction=initial_direction)
+        self._snapshot_cache: Optional[dict] = None
+        self._safe_frontier_cache: Optional[list[Position]] = None
+        self._safe_cells_cache: Optional[set[Position]] = None
         if hasattr(self.kb, "set_exit"):
             self.kb.set_exit(start)
         self.kb.reset()
         if hasattr(self.kb, "set_exit"):
             self.kb.set_exit(start)
         self.kb.set_agent_pos(start)
+
+    def _invalidate_kb_cache(self) -> None:
+        self._snapshot_cache = None
+        self._safe_frontier_cache = None
+        self._safe_cells_cache = None
+
+    def _snapshot(self) -> dict:
+        if self._snapshot_cache is None:
+            self._snapshot_cache = self.kb.snapshot()
+        return self._snapshot_cache
+
+    def _safe_frontier(self) -> list[Position]:
+        if self._safe_frontier_cache is None:
+            snapshot = self._snapshot()
+            safe = set(map(tuple, snapshot.get("safe", [])))
+            visited = set(map(tuple, snapshot.get("visited", [])))
+            self._safe_frontier_cache = sorted(safe - visited)
+        return self._safe_frontier_cache
+
+    def _safe_cells(self) -> set[Position]:
+        if self._safe_cells_cache is None:
+            self._safe_cells_cache = set(map(tuple, self._snapshot().get("safe", [])))
+        return self._safe_cells_cache
+
+    def _is_known_safe(self, pos: Position) -> bool:
+        return pos in self._safe_cells()
 
     @property
     def backend(self) -> str:
@@ -105,10 +134,14 @@ class Agent:
         if pos != previous_pos:
             self.state.unreachable_targets.clear()
 
-        self.kb.set_agent_pos(pos)
-        self.kb.set_agent_energy(energy)
+        if hasattr(self.kb, "set_agent_state"):
+            self.kb.set_agent_state(pos, energy)
+        else:
+            self.kb.set_agent_pos(pos)
+            self.kb.set_agent_energy(energy)
         active = percept.as_list()
         self.kb.update_perception(pos, active)
+        self._invalidate_kb_cache()
         if (
             self.state.last_action == Action.WALK
             and energy < previous_energy
@@ -130,8 +163,10 @@ class Agent:
         if kind == "gold":
             self.state.gold_carried += 1
             self.kb.mark_gold_taken(self.state.pos)
+            self._invalidate_kb_cache()
         elif kind == "powerup":
             self.kb.mark_powerup_taken(self.state.pos)
+            self._invalidate_kb_cache()
 
     def notify_step_result(self, action: Action, result: StepResult) -> None:
         """Aprende efeitos que so aparecem depois de executar uma acao.
@@ -149,6 +184,7 @@ class Agent:
                 self.state.teleporter_cells.add(origin)
                 self.state.blocked_cells.add(origin)
         self.state.pending.clear()
+        self._invalidate_kb_cache()
 
     def decide_action(self) -> Action:
         """Calcula e registra a acao escolhida para o turno.
@@ -234,11 +270,11 @@ class Agent:
             action = self._move_toward(target)
             if action is not None:
                 return action
-            gold_seen = set(map(tuple, self.kb.snapshot().get("gold_seen", [])))
+            gold_seen = set(map(tuple, self._snapshot().get("gold_seen", [])))
             if target not in gold_seen:
                 self.state.unreachable_targets.add(target)
             alt = self._best_exploration_target(
-                self.kb.snapshot(),
+                self._snapshot(),
                 include_risky=True,
                 banned=set(self.state.blocked_cells) | set(self.state.unreachable_targets),
             )
@@ -281,7 +317,7 @@ class Agent:
                 if in_bounds(right, self.size) and right not in self.state.blocked_cells:
                     return Action.TURN_RIGHT
                 alt = self._best_exploration_target(
-                    self.kb.snapshot(),
+                    self._snapshot(),
                     include_risky=True,
                     banned=set(self.state.blocked_cells),
                 )
@@ -310,9 +346,9 @@ class Agent:
 
         path = astar(self.state.pos, goal, walkable, size=self.size)
         if path is None and goal == self.exit_pos and self.state.gold_carried >= GOLD_TARGET:
-            path = astar(self.state.pos, goal, self.kb.likely_safe, size=self.size)
+            path = astar(self.state.pos, goal, self._is_known_safe, size=self.size)
         if path is None and self.state.damaging_cells:
-            path = astar(self.state.pos, goal, self.kb.likely_safe, size=self.size)
+            path = astar(self.state.pos, goal, self._is_known_safe, size=self.size)
         if path is None:
             return []
         return path_to_actions(path, self.state.direction)
@@ -342,7 +378,7 @@ class Agent:
         escolha com heuristicas de custo, bloqueios temporarios e prioridades
         de coleta.
         """
-        snapshot = self.kb.snapshot()
+        snapshot = self._snapshot()
         priority = set(map(tuple, snapshot.get("gold_seen", [])))
         if self.state.energy <= INITIAL_ENERGY // 2:
             priority |= set(map(tuple, snapshot.get("powerup_seen", [])))
@@ -366,7 +402,7 @@ class Agent:
                 )
                 or proposed
             )
-        if self.kb.likely_safe(proposed):
+        if self._is_known_safe(proposed):
             if (
                 self.state.gold_carried >= GOLD_TARGET - 1
                 and self.state.energy > INITIAL_ENERGY // 8
@@ -384,7 +420,7 @@ class Agent:
         """
         best: Optional[Position] = None
         best_cost = float("inf")
-        for cell in self.kb.safe_unvisited_frontier():
+        for cell in self._safe_frontier():
             path = astar(self.state.pos, cell, self._is_walkable, size=self.size)
             if path is None:
                 continue
@@ -413,9 +449,9 @@ class Agent:
         - o risco estimado a partir da KB;
         - o efeito esperado sobre a energia restante.
         """
-        snapshot = snapshot or self.kb.snapshot()
+        snapshot = snapshot or self._snapshot()
         banned = banned or set()
-        safe_frontier = set(map(tuple, self.kb.safe_unvisited_frontier()))
+        safe_frontier = set(map(tuple, self._safe_frontier()))
         risky_frontier = (
             set(map(tuple, snapshot.get("risky_frontier", []))) if include_risky else set()
         )
@@ -551,7 +587,7 @@ class Agent:
             return False
         if pos in self.state.blocked_cells:
             return False
-        return self.kb.likely_safe(pos)
+        return self._is_known_safe(pos)
 
     def _forward_pos(self) -> Position:
         """Retorna a celula logo a frente do agente.
@@ -579,7 +615,7 @@ class Agent:
         """
         from .planner import astar
 
-        frontier = self.kb.safe_unvisited_frontier()
+        frontier = self._safe_frontier()
         if not frontier:
             return None
 

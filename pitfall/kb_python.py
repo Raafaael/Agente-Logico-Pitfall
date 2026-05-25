@@ -106,6 +106,11 @@ class PythonKB:
         """
         self.agent_energy = energy
 
+    def set_agent_state(self, pos: Position, energy: int) -> None:
+        """Atualiza posicao e energia em uma unica chamada."""
+        self.agent_pos = pos
+        self.agent_energy = energy
+
     def update_perception(self, pos: Position, percepts: list[str]) -> None:
         """Atualiza a memoria com base nas percepcoes atuais.
 
