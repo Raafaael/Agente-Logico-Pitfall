@@ -1,219 +1,153 @@
-# Agente Logico - Pitfall (INF1771)
+# Agente Logico - Pitfall
 
-Agente logico inspirado no Mundo de Wumpus/Pitfall, desenvolvido em
-Python + SWI-Prolog para a disciplina INF1771.
+## Video da apresentacao
 
-O agente explora um labirinto 12x12 usando apenas percepcoes: brisa, passos,
-flash, brilho e impacto. O mapa real fica isolado no ambiente Python; a base de
-conhecimento em Prolog, ou o fallback Python equivalente, decide o que fazer a
-partir do que o agente ja percebeu.
+- Link do video: `a definir`
+
+## Integrantes
+
+- `Breno de Andrade Soares` - Matricula: `2320363`
+- `Dante Honorato Navaza` - Matricula: `2321406`
+- `Rafael Soares Estevao` - Matricula: `2320470`
+
+Implementacao do trabalho `INF1771_trabalho_2_pitfall.pdf` usando:
+
+- `SWI-Prolog` para representar a base de conhecimento e tomar decisoes logicas.
+- `A*` em Python para transformar metas da base de conhecimento em rotas no mapa.
+- `Memoria de percepcoes` para deduzir salas seguras, pocos, inimigos e teletransportes.
+- `Fallback Python` equivalente para executar o projeto quando `swipl` nao esta disponivel.
+- `Interface grafica (GUI)` para acompanhar o agente, score, energia e conhecimento descoberto.
+
+## Configurabilidade
+
+Tudo que precisa ser configurado fica nos argumentos do `main.py` e nos arquivos da pasta `maps/`:
+
+- caminho do mapa (`--map`);
+- seed de mapa aleatorio (`--seed`);
+- salvamento de mapa gerado (`--save-map`);
+- limite de turnos (`--max-steps`);
+- backend da base de conhecimento (`--kb auto`, `--kb prolog` ou `--kb python`);
+- renderizacao terminal (`--render-every`, `--reveal`, `--quiet`, `--delay`);
+- execucao pela interface grafica (`--gui`).
+
+Os mapas podem ser carregados em `.pl`, `.json` ou texto puro com 12 linhas.
+
+## Resultado
+
+
+| Mapa | Backend | Score | Energia | Ouros | Powerups | Acoes |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `maps/mapa-facil.pl` | `swi-prolog` | `2734` | `100` | `3/3` | `0/3` | `267` |
+| `maps/mapa-facil.pl` | `python` | `2734` | `100` | `3/3` | `0/3` | `267` |
+| `maps/mapa-medio.pl` | `swi-prolog` | `2671` | `80` | `3/3` | `1/3` | `330` |
+| `maps/mapa-medio.pl` | `python` | `2609` | `90` | `3/3` | `3/3` | `392` |
+| `maps/mapa-dificil.pl` | `swi-prolog` | `2617` | `80` | `3/3` | `1/3` | `384` |
+| `maps/mapa-dificil.pl` | `python` | `2617` | `80` | `3/3` | `1/3` | `384` |
+
+
+## Regras implementadas
+
+- Labirinto `12x12`.
+- Posicao inicial e saida em `[1,1]`.
+- Acoes: `andar`, `virar_a_esquerda`, `virar_a_direita`, `pegar` e `sair`.
+- Score: cada acao custa `-1`, ouro vale `+1000`, poco aplica `-1000`, morte aplica `-1000`.
+- Energia inicial `100`.
+- Inimigo pequeno tira `20` de energia; inimigo grande tira `50` de energia.
+- Ao encontrar um inimigo, ele causa dano, desaparece e o ambiente retorna a percepcao `scream` naquele turno.
+- Poco encerra o jogo imediatamente.
+- Teletransporte move o agente para uma sala aleatoria, inclusive outra sala perigosa.
+- Powerup aparece como percepcao local e recupera ate `20` de energia ao executar `pegar`.
+- Sair do labirinto e uma acao explicita: passar por `[1,1]` nao encerra o jogo sozinho.
+- O agente nao consulta o mapa real para decidir.
 
 ## Estrutura
 
-```text
-.
-|-- main.py
-|-- requirements.txt
-|-- pitfall/
-|   |-- types.py
-|   |-- environment.py
-|   |-- map_loader.py
-|   |-- planner.py
-|   |-- agent.py
-|   |-- prolog_bridge.py
-|   |-- kb_python.py
-|   |-- knowledge_base.pl
-|   |-- render.py
-|   `-- gui.py
-|-- maps/
-|   |-- mapa.pl
-|   |-- mapa-facil.pl
-|   |-- mapa-medio.pl
-|   `-- mapa-dificil.pl
-|-- assets/
-`-- Instrucoes/
-    `-- INF1771_trabalho_2_pitfall.pdf
-```
+- `main.py`: ponto de entrada da aplicacao, argumentos de execucao e loop principal.
+- `pitfall/types.py`: constantes, enumeracoes, acoes, percepcoes e resultado de turno.
+- `pitfall/environment.py`: ambiente real do jogo, aplicacao das acoes, score, energia, dano, poco e teletransporte.
+- `pitfall/agent.py`: politica do agente, controle de retorno, escolha de metas e integracao com a KB.
+- `pitfall/knowledge_base.pl`: base de conhecimento em Prolog, memoria, certeza, riscos e regra `decide/1`.
+- `pitfall/kb_python.py`: fallback Python que replica as regras principais da KB Prolog.
+- `pitfall/prolog_bridge.py`: comunicacao com o processo `swipl` e fallback automatico.
+- `pitfall/planner.py`: A* e conversao de caminhos em acoes concretas.
+- `pitfall/TreeNode.py`: no de busca usado pelo planejador A*.
+- `pitfall/map_loader.py`: carregamento de mapas `.pl`, `.json`, texto e geracao aleatoria.
+- `pitfall/render.py`: renderizacao textual do mapa e do conhecimento do agente.
+- `pitfall/gui.py`: interface grafica em Tkinter.
+- `maps/`: mapas de teste fornecidos.
+- `assets/`: imagens usadas pela GUI.
+- `Instrucoes/`: PDF do enunciado.
 
-## Requisitos
+## Como executar
 
-- Python 3.10+
-- SWI-Prolog opcional, com `swipl` no PATH
+### Configuracao inicial
 
-Sem dependencias Python externas obrigatorias. A GUI usa Tkinter, que
-normalmente ja vem com Python no Windows.
+Use Python `3.10+`. Nao ha dependencias Python externas obrigatorias; a GUI usa `Tkinter`, que normalmente ja vem com Python no Windows.
 
-Se `python` nao estiver configurado no Windows, use `py` nos comandos.
-
-## Como Rodar
-
-Mapa aleatorio:
+Opcionalmente, crie e ative um ambiente virtual:
 
 ```bash
-py main.py --seed 42
+py -3 -m venv .venv
+.venv\Scripts\Activate.ps1
 ```
 
-Interface grafica:
+Instale o arquivo de requisitos, mesmo ele servindo apenas como documentacao das dependencias:
 
 ```bash
-py main.py --gui
+pip install -r requirements.txt
 ```
 
-Interface grafica com mapa carregado:
+Para rodar com Prolog, instale o `SWI-Prolog`. Se ele estiver no `PATH`, o comando abaixo deve funcionar:
 
 ```bash
-py main.py --gui --map maps/mapa-facil.pl --reveal
+swipl --version
 ```
 
-Mapa Prolog/manual:
+### Executando a aplicacao
+
+Para rodar um mapa fixo no terminal:
 
 ```bash
-py main.py --map maps/mapa.pl
+py -3 main.py --map maps/mapa-facil.pl --render-every 0
 ```
 
-Forcar SWI-Prolog, falhando se `swipl` nao estiver instalado:
+Para forcar o backend Prolog:
 
 ```bash
-py main.py --kb prolog --map maps/mapa.pl
+py -3 main.py --kb prolog --map maps/mapa-facil.pl --render-every 0
 ```
 
-Forcar backend Python:
+Para forcar o fallback Python:
 
 ```bash
-py main.py --kb python --map maps/mapa.pl
+py -3 main.py --kb python --map maps/mapa-facil.pl --render-every 0
 ```
 
-Ver opcoes:
+Para gerar um mapa aleatorio:
 
 ```bash
-py main.py --help
+py -3 main.py --seed 42
 ```
 
-## GUI
+Para salvar um mapa aleatorio gerado:
 
-A GUI permite:
-
-- executar o agente passo a passo;
-- rodar e pausar a execucao automatica;
-- controlar manualmente o personagem;
-- carregar mapas `.json`, `.txt` e `.pl`;
-- gerar novo mapa aleatorio;
-- alternar visualizacao entre conhecimento do agente e mapa real;
-- acompanhar posicao, direcao, energia, score, percepcoes, acao e historico.
-
-Atalhos:
-
-- seta para cima: andar;
-- seta esquerda/direita: virar;
-- espaco: pegar;
-- Enter: passo automatico do agente.
-
-Na GUI tambem existe o botao `Sair`. A saida e voluntaria: passar pela casa
-`[1,1]` nao encerra o jogo automaticamente; o jogo so termina quando a acao
-`sair` e executada enquanto o personagem esta na posicao inicial/saida.
-
-## Formatos de Mapa
-
-JSON com grade:
-
-```json
-{
-  "size": 12,
-  "start": [1, 1],
-  "initial_direction": "east",
-  "grid": [
-    "............",
-    "....O.......",
-    "............",
-    "............",
-    "............",
-    "............",
-    "............",
-    "............",
-    "............",
-    "............",
-    "............",
-    "............"
-  ]
-}
+```bash
+py -3 main.py --seed 42 --save-map maps/seed-42.json
 ```
 
-JSON com lista de celulas:
+Para abrir a interface grafica:
 
-```json
-{
-  "size": 12,
-  "start": [1, 1],
-  "initial_direction": "east",
-  "cells": [
-    {"pos": [2, 5], "type": "gold"},
-    {"pos": [4, 3], "type": "pit"}
-  ]
-}
+```bash
+py -3 main.py --gui --map maps/mapa-facil.pl
 ```
 
-Texto puro tambem funciona: 12 linhas com 12 simbolos cada.
+Para ver todas as opcoes:
 
-Simbolos aceitos:
+```bash
+py -3 main.py --help
+```
 
-- `.` ou `S`: vazio;
-- `P`: poco/obstaculo;
-- `d`: inimigo pequeno, dano 20;
-- `D`: inimigo grande, dano 50;
-- `T`: teletransporte;
-- `O`: ouro;
-- `U`: powerup.
+## Observacoes
 
-Mapas `.pl` no formato `tile(X, Y, 'O').` tambem sao carregados.
-
-## Regras Implementadas
-
-- Labirinto 12x12.
-- Energia inicial 100.
-- Geracao aleatoria com 2 inimigos pequenos, 2 grandes, 4 teletransportes,
-  8 pocos, 3 ouros e 3 powerups.
-- Pontuacao por acao, ouro, poco e morte.
-- Powerup recupera energia automaticamente ao entrar na sala.
-- Teletransporte pode cair em qualquer outra sala, inclusive perigo.
-- Sair do labirinto e uma acao explicita na posicao `[1,1]`; atravessar a
-  saida sem executar `sair` nao termina a partida.
-- Agente nao consulta o mapa real para decidir.
-- A* roda em Python sobre salas conhecidas/seguras.
-- Prolog representa conhecimento e tomada de decisao quando `swipl` existe.
-- Fallback Python mantem o projeto executavel sem SWI-Prolog instalado.
-
-## Backend e Fallback
-
-O argumento `--kb` controla qual base de conhecimento o agente usa:
-
-- `--kb auto` tenta iniciar o SWI-Prolog primeiro. Se o executavel `swipl` nao
-  estiver no PATH ou a KB Prolog nao puder ser carregada, o jogo usa
-  automaticamente a KB Python equivalente e mostra `python (fallback de
-  swi-prolog)` no resultado.
-- `--kb prolog` exige SWI-Prolog. Use este modo para apresentacao/avaliacao,
-  pois ele falha explicitamente se o Prolog nao estiver disponivel.
-- `--kb python` usa diretamente a KB Python. Este modo existe para testes em
-  maquinas sem SWI-Prolog e replica as mesmas regras de inferencia usadas em
-  `knowledge_base.pl`.
-
-O fallback nao revela o mapa real ao agente. Ele substitui apenas o motor de
-inferencia/tomada de decisao quando o processo `swipl` nao pode ser iniciado.
-
-## Melhorias Ja Incluidas
-
-- Inferencia de perigos confirmados quando uma percepcao aponta para um unico
-  vizinho possivel.
-- Politica de risco quando nao ha fronteira segura: evita poco confirmado e
-  prefere riscos menores.
-- Agente so volta para sair quando tem os 3 ouros, ou quando tem ouro e energia
-  baixa.
-- GUI com modo automatico e modo manual.
-- Documentacao centralizada apenas neste README.
-
-## Limitacoes
-
-- Nao ha acao explicita de ataque no enunciado; por isso o sensor `scream`
-  fica reservado para uma extensao futura.
-- Se o SWI-Prolog nao estiver instalado, o backend usado sera Python.
-- A politica de risco melhora a exploracao, mas ainda nao garante vitoria em
-  todos os mapas aleatorios.
+- `--kb auto` tenta usar `swipl`; se nao encontrar, usa `pitfall/kb_python.py`.
+- `--kb prolog` falha explicitamente se o SWI-Prolog nao estiver instalado.
