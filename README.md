@@ -50,7 +50,7 @@ Resultados obtidos nesta branch com os mapas fornecidos:
 
 - Labirinto `12x12`.
 - Posicao inicial e saida em `[1,1]`.
-- Acoes: `andar`, `virar_a_esquerda`, `virar_a_direita`, `pegar` e `sair`.
+- Acoes do jogo: `andar`, `virar_a_esquerda`, `virar_a_direita` e `pegar`; o projeto tambem usa o comando `sair` para encerrar a partida quando o agente esta em `[1,1]`.
 - Score: cada acao custa `-1`, ouro vale `+1000`, dano de inimigo desconta o valor do dano, poco aplica `-1000` e morte aplica `-1000`.
 - Energia inicial `100`.
 - Inimigo pequeno tira `20` de energia e `20` de score; inimigo grande tira `50` de energia e `50` de score.
@@ -58,7 +58,7 @@ Resultados obtidos nesta branch com os mapas fornecidos:
 - Poco encerra o jogo imediatamente.
 - Teletransporte move o agente para uma sala aleatoria, inclusive outra sala perigosa.
 - Powerup aparece como percepcao local, pode ficar guardado para depois e recupera ate `20` de energia ao executar `pegar`.
-- Sair do labirinto e uma acao explicita: passar por `[1,1]` nao encerra o jogo sozinho.
+- Sair do labirinto e um comando explicito: passar por `[1,1]` nao encerra o jogo sozinho.
 - O agente nao consulta o mapa real para decidir.
 
 ## Estrutura

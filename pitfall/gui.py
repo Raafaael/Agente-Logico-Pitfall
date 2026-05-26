@@ -24,7 +24,6 @@ class GuiConfig:
     map_path: Path | None = None
     seed: int | None = None
     kb_backend: str = "auto"
-    min_score: int = -500
     max_steps: int = 400
     delay: float = 0.25
 
@@ -226,7 +225,6 @@ class PitfallGUI:
             return
         if (
             self.env.game_over
-            or self.env.score <= self.config.min_score
             or self.turn >= self.config.max_steps
         ):
             return
@@ -372,7 +370,6 @@ def launch_gui(
     kb_backend: str = "auto",
     reveal: bool = False,
     max_steps: int = 400,
-    min_score: int = -500,
     delay: float = 0.25,
 ) -> None:
     _ = reveal
@@ -380,7 +377,6 @@ def launch_gui(
         map_path=map_path,
         seed=seed,
         kb_backend=kb_backend,
-        min_score=min_score,
         max_steps=max_steps,
         delay=delay if delay > 0 else 0.25,
     )
