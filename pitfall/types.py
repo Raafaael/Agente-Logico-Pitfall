@@ -145,7 +145,7 @@ class Percept:
     glow: bool = False      # ouro na sala atual (brilho)
     powerup: bool = False   # powerup na sala atual (reflexo)
     impact: bool = False    # andou contra a parede
-    scream: bool = False    # reserved for future enemy-combat extensions
+    scream: bool = False    # emitted when an enemy disappears after damaging the agent
 
     def as_list(self) -> list[str]:
         return [k for k, v in self.__dict__.items() if v]

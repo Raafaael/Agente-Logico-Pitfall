@@ -9,6 +9,9 @@ from .planner import astar, path_to_actions
 from .prolog_bridge import KnowledgeBase, make_kb
 from .types import (
     Action,
+    CRITICAL_ENERGY_RETURN,
+    DAMAGE_BIG,
+    DAMAGE_SMALL,
     Direction,
     GOLD_TARGET,
     GRID_SIZE,
@@ -237,7 +240,7 @@ class Agent:
             return Action.GRAB
         if (self.state.last_percept is not None
                 and self.state.last_percept.powerup
-                and self.state.energy < INITIAL_ENERGY):
+                and self.state.energy <= INITIAL_ENERGY - POWERUP_ENERGY_GAIN):
             return Action.GRAB
         if (self.state.last_percept is not None
                 and self.state.last_percept.impact
@@ -282,9 +285,9 @@ class Agent:
                     self.state.last_decision = ("retornar_sem_rota", self.exit_pos)
                     return Action.TURN_RIGHT
                 self.state.returning_to_exit = False
-        if not self.state.returning_to_exit and not self._enough_energy_to_return():
+        if not self.state.returning_to_exit and self._should_return_for_energy():
             self.state.returning_to_exit = True
-            self.state.last_decision = ("retornar_energia", self.exit_pos)
+            self.state.last_decision = ("retornar_energia_critica", self.exit_pos)
             if self.state.pos == self.exit_pos:
                 return Action.EXIT
             action = self._move_toward(self.exit_pos)
@@ -397,23 +400,29 @@ class Agent:
             return []
         return path_to_actions(path, self.state.direction)
 
-    def _enough_energy_to_return(self) -> bool:
-        """Verifica se ainda vale explorar antes de retornar.
+    def _should_return_for_energy(self) -> bool:
+        """Decide retorno por energia sem tratar deslocamento como gasto.
 
-        A ideia nao e prever o futuro com exatidao absoluta, mas manter uma
-        margem conservadora para que o agente nao se comprometa com exploracoes
-        longas quando ja esta perto do limite de retorno seguro.
+        Como andar nao consome energia, a distancia ate a saida nao entra mais
+        nesse calculo. Energia baixa aqui significa pouca margem para sobreviver
+        a outro inimigo; se houver powerup seguro conhecido, o agente tenta
+        recuperar energia em vez de desistir da exploracao.
         """
-        if self.state.pos == self.exit_pos:
-            return True
-        path = self._plan_path(self.exit_pos)
-        if path:
-            steps_home = len(path)
-        else:
-            r1, c1 = self.state.pos
-            r2, c2 = self.exit_pos
-            steps_home = (abs(r1 - r2) + abs(c1 - c2)) * 2 + 5
-        return self.state.energy > steps_home + 1
+        if self.state.gold_carried <= 0:
+            return False
+        if self.state.energy > CRITICAL_ENERGY_RETURN:
+            return False
+
+        snapshot = self._snapshot()
+        powerups = set(map(tuple, snapshot.get("powerup_seen", [])))
+        safe_powerups = [
+            p
+            for p in powerups
+            if self._is_known_safe(p)
+            and p not in self.state.blocked_cells
+            and p not in self.state.teleporter_cells
+        ]
+        return not safe_powerups
 
     def _choose_target(self, proposed: Position) -> Position:
         """Ajusta a meta da KB quando existe uma alternativa melhor.
@@ -570,7 +579,7 @@ class Agent:
             travel_cost = len(actions)
             info_gain = self._information_gain(cell, snapshot)
             exit_distance = self._distance_from_exit(cell)
-            energy_margin = self._energy_margin_after(cell, travel_cost)
+            energy_margin = self._energy_margin_after(cell, snapshot)
 
             score = info_gain * 16 + exit_distance - travel_cost * 3 - risk
             if cell in gold_seen:
@@ -648,25 +657,27 @@ class Agent:
         x, y = pos
         return x in (1, self.size) and y in (1, self.size)
 
-    def _energy_margin_after(self, target: Position, travel_cost: int) -> int:
-        """Estima quanta energia sobraria apos visitar a meta e voltar.
+    def _energy_margin_after(self, target: Position, snapshot: dict) -> int:
+        """Estima a energia apos o evento provavel da celula alvo.
 
-        O calculo considera o custo de ida ate a meta e uma aproximacao do
-        retorno ate a saida. Isso ajuda a penalizar destinos que parecem bons,
-        mas deixam o agente em uma situacao apertada depois.
+        Deslocamento nao entra nessa conta: energia so muda em inimigos e
+        powerups. A estimativa serve apenas para evitar escolher um risco que
+        possa matar o agente quando ele ja esta carregando ouro.
         """
-        path_home = astar(target, self.exit_pos, self._is_walkable, size=self.size)
-        if path_home is None:
-            home_cost = self._distance_from_exit(target) * 2 + 5
-        else:
-            home_walks = max(0, len(path_home) - 1)
-            direction_changes = sum(
-                1 for i in range(1, len(path_home) - 1)
-                if (path_home[i][0] - path_home[i-1][0], path_home[i][1] - path_home[i-1][1])
-                != (path_home[i+1][0] - path_home[i][0], path_home[i+1][1] - path_home[i][1])
-            ) if len(path_home) > 2 else 0
-            home_cost = home_walks + direction_changes + 2
-        return self.state.energy - travel_cost - home_cost
+        expected = self.state.energy
+        powerup_seen = set(map(tuple, snapshot.get("powerup_seen", [])))
+        if target in powerup_seen:
+            expected = min(INITIAL_ENERGY, expected + POWERUP_ENERGY_GAIN)
+
+        if target in set(map(tuple, snapshot.get("confirmed_pit", []))):
+            return -1000
+        if target in set(map(tuple, snapshot.get("risk_pit", []))):
+            return min(expected, 0)
+        if target in set(map(tuple, snapshot.get("confirmed_enemy", []))):
+            return expected - DAMAGE_BIG
+        if target in set(map(tuple, snapshot.get("risk_enemy", []))):
+            return expected - DAMAGE_SMALL
+        return expected
 
     def _is_walkable(self, pos: Position) -> bool:
         """Filtra celulas seguras e evita riscos repetidos.
@@ -719,8 +730,11 @@ class Agent:
         def walkable(p: Position) -> bool:
             return self._is_walkable(p)
 
+        if self.state.energy <= CRITICAL_ENERGY_RETURN:
+            return None
+
         best: Optional[Position] = None
-        best_total = self.state.energy
+        best_total = float("inf")
 
         for cell in frontier:
             path_there = self._plan_path(cell)
@@ -740,7 +754,7 @@ class Agent:
             est_return = walks_home + direction_changes + 2
 
             total = steps_to_cell + est_return
-            if self.state.energy > total and total < best_total:
+            if total < best_total:
                 best_total = total
                 best = cell
 

@@ -46,6 +46,7 @@
 grid_size(12).
 target_gold(3).
 energy_low_threshold(50).   % limiar para buscar/pegar powerup (50% de INITIAL_ENERGY=100)
+powerup_use_threshold(80).  % pegar powerup local so quando recupera os 20 completos
 
 valid_pos(R/C) :-
     grid_size(N),
@@ -220,13 +221,13 @@ risk_score(Pos, Score) :-
 % =====================================================================
 % Tomada de decisao - decide/1  (equivalente a executa_acao de main.pl)
 %
-% O agente NUNCA retorna para a saida com ouro parcial por energia baixa
-% (fiel ao main.pl). O retorno forçado por energia critica e' responsabilidade
-% do lado Python (CRITICAL_ENERGY_RETURN=25 em agent.py).
+% O agente NUNCA retorna para a saida com ouro parcial por energia baixa dentro
+% da KB. Um retorno defensivo por energia critica pode ser aplicado pelo lado
+% Python, sem tratar deslocamento como gasto de energia.
 %
 % Prioridade:
 %   1. pegar ouro no local
-%   2. pegar powerup no local quando energia baixa  (energia_baixa)
+%   2. pegar powerup no local quando ele recupera os 20 completos
 %   3. sair com todos os ouros na saida
 %   4. mover para ouro seguro conhecido
 %   5. mover para powerup mais proximo quando energia baixa  (energia_baixa)
@@ -240,12 +241,13 @@ decide(pegar) :-
     agent_pos(Pos),
     gold_seen(Pos), !.
 
-% 2. Powerup no local: coletar somente se tiver sofrido dano (energia < 100)
+% 2. Powerup no local: salvar para depois se a energia ainda estiver acima de 80
 decide(pegar) :-
     agent_pos(Pos),
     powerup_seen(Pos),
     agent_energy(E),
-    E < 100, !.
+    powerup_use_threshold(T),
+    E =< T, !.
 
 % 3. Saida com todos os ouros
 decide(sair) :-

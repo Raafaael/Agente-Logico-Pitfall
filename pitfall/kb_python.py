@@ -16,7 +16,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional
 
-from .types import GOLD_TARGET, GRID_SIZE, INITIAL_ENERGY, Position, orthogonal_neighbors
+from .types import (
+    GOLD_TARGET,
+    GRID_SIZE,
+    INITIAL_ENERGY,
+    POWERUP_ENERGY_GAIN,
+    Position,
+    orthogonal_neighbors,
+)
 
 
 @dataclass
@@ -289,7 +296,10 @@ class PythonKB:
         pos = self.agent_pos
         if pos in self.gold_seen:
             return "pegar", None
-        if pos in self.powerup_seen and self.agent_energy < INITIAL_ENERGY:
+        if (
+            pos in self.powerup_seen
+            and self.agent_energy <= INITIAL_ENERGY - POWERUP_ENERGY_GAIN
+        ):
             return "pegar", None
         if pos == self.exit_pos and self.gold_carried >= GOLD_TARGET:
             return "sair", None

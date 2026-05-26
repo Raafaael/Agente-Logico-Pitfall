@@ -34,15 +34,16 @@ Os mapas podem ser carregados em `.pl`, `.json` ou texto puro com 12 linhas.
 
 ## Resultado
 
+Resultados obtidos nesta branch com os mapas fornecidos:
 
 | Mapa | Backend | Score | Energia | Ouros | Powerups | Acoes |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
 | `maps/mapa-facil.pl` | `swi-prolog` | `2734` | `100` | `3/3` | `0/3` | `267` |
 | `maps/mapa-facil.pl` | `python` | `2734` | `100` | `3/3` | `0/3` | `267` |
-| `maps/mapa-medio.pl` | `swi-prolog` | `2671` | `80` | `3/3` | `1/3` | `330` |
-| `maps/mapa-medio.pl` | `python` | `2609` | `90` | `3/3` | `3/3` | `392` |
-| `maps/mapa-dificil.pl` | `swi-prolog` | `2617` | `80` | `3/3` | `1/3` | `384` |
-| `maps/mapa-dificil.pl` | `python` | `2617` | `80` | `3/3` | `1/3` | `384` |
+| `maps/mapa-medio.pl` | `swi-prolog` | `2631` | `80` | `3/3` | `1/3` | `330` |
+| `maps/mapa-medio.pl` | `python` | `2539` | `90` | `3/3` | `3/3` | `392` |
+| `maps/mapa-dificil.pl` | `swi-prolog` | `2577` | `80` | `3/3` | `1/3` | `384` |
+| `maps/mapa-dificil.pl` | `python` | `2577` | `80` | `3/3` | `1/3` | `384` |
 
 
 ## Regras implementadas
@@ -50,13 +51,13 @@ Os mapas podem ser carregados em `.pl`, `.json` ou texto puro com 12 linhas.
 - Labirinto `12x12`.
 - Posicao inicial e saida em `[1,1]`.
 - Acoes: `andar`, `virar_a_esquerda`, `virar_a_direita`, `pegar` e `sair`.
-- Score: cada acao custa `-1`, ouro vale `+1000`, poco aplica `-1000`, morte aplica `-1000`.
+- Score: cada acao custa `-1`, ouro vale `+1000`, dano de inimigo desconta o valor do dano, poco aplica `-1000` e morte aplica `-1000`.
 - Energia inicial `100`.
-- Inimigo pequeno tira `20` de energia; inimigo grande tira `50` de energia.
+- Inimigo pequeno tira `20` de energia e `20` de score; inimigo grande tira `50` de energia e `50` de score.
 - Ao encontrar um inimigo, ele causa dano, desaparece e o ambiente retorna a percepcao `scream` naquele turno.
 - Poco encerra o jogo imediatamente.
 - Teletransporte move o agente para uma sala aleatoria, inclusive outra sala perigosa.
-- Powerup aparece como percepcao local e recupera ate `20` de energia ao executar `pegar`.
+- Powerup aparece como percepcao local, pode ficar guardado para depois e recupera ate `20` de energia ao executar `pegar`.
 - Sair do labirinto e uma acao explicita: passar por `[1,1]` nao encerra o jogo sozinho.
 - O agente nao consulta o mapa real para decidir.
 
