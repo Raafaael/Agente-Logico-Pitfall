@@ -69,6 +69,7 @@ class Agent:
         start: Position = START_POS,
         initial_direction: Direction = Direction.EAST,
     ) -> None:
+        """Prepara a KB, o estado inicial e os caches usados nas decisoes."""
         self.kb = kb or make_kb(kb_backend)
         self.size = size
         self.exit_pos = start
@@ -84,16 +85,19 @@ class Agent:
         self.kb.set_agent_pos(start)
 
     def _invalidate_kb_cache(self) -> None:
+        """Descarta snapshots calculados depois de qualquer mudanca na KB."""
         self._snapshot_cache = None
         self._safe_frontier_cache = None
         self._safe_cells_cache = None
 
     def _snapshot(self) -> dict:
+        """Retorna uma visao cacheada do conhecimento atual do agente."""
         if self._snapshot_cache is None:
             self._snapshot_cache = self.kb.snapshot()
         return self._snapshot_cache
 
     def _safe_frontier(self) -> list[Position]:
+        """Lista celulas seguras ainda nao visitadas, usando cache local."""
         if self._safe_frontier_cache is None:
             snapshot = self._snapshot()
             safe = set(map(tuple, snapshot.get("safe", [])))
@@ -102,11 +106,13 @@ class Agent:
         return self._safe_frontier_cache
 
     def _safe_cells(self) -> set[Position]:
+        """Retorna o conjunto de celulas consideradas seguras pela KB."""
         if self._safe_cells_cache is None:
             self._safe_cells_cache = set(map(tuple, self._snapshot().get("safe", [])))
         return self._safe_cells_cache
 
     def _is_known_safe(self, pos: Position) -> bool:
+        """Verifica se uma posicao ja esta no conjunto seguro conhecido."""
         return pos in self._safe_cells()
 
     @property
@@ -389,6 +395,7 @@ class Agent:
         segunda busca mais permissiva para nao travar o agente desnecessariamente.
         """
         def walkable(p: Position) -> bool:
+            """Permite ao A* andar apenas por celulas aceitas pelo agente."""
             return self._is_walkable(p)
 
         path = astar(self.state.pos, goal, walkable, size=self.size)
@@ -728,6 +735,7 @@ class Agent:
             return None
 
         def walkable(p: Position) -> bool:
+            """Reusa a politica de caminhada atual para avaliar desvios."""
             return self._is_walkable(p)
 
         if self.state.energy <= CRITICAL_ENERGY_RETURN:

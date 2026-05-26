@@ -48,6 +48,7 @@ class Environment:
         initial_energy: int = INITIAL_ENERGY,
         rng: Optional[random.Random] = None,
     ) -> None:
+        """Inicializa o mundo real, a posicao do agente e os contadores."""
         self._grid = [row[:] for row in grid]
         self.size = len(grid)
         self.start_pos: Position = start

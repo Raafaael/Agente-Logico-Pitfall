@@ -37,25 +37,69 @@ END_MARKER = "---END---"
 
 
 class KnowledgeBase(Protocol):
+    """Define a interface comum usada pelo agente para qualquer backend de KB."""
+
     backend: str
-    def reset(self) -> None: ...
-    def set_agent_pos(self, pos: Position) -> None: ...
-    def set_agent_energy(self, energy: int) -> None: ...
-    def set_agent_state(self, pos: Position, energy: int) -> None: ...
-    def update_perception(self, pos: Position, percepts: list[str]) -> None: ...
-    def mark_gold_taken(self, pos: Position) -> None: ...
-    def mark_powerup_taken(self, pos: Position) -> None: ...
-    def likely_safe(self, pos: Position) -> bool: ...
-    def is_visited(self, pos: Position) -> bool: ...
-    def is_known_gold(self, pos: Position) -> bool: ...
-    def is_risky(self, pos: Position) -> bool: ...
-    def safe_unvisited_frontier(self) -> list[Position]: ...
-    def decide(self) -> tuple[str, Optional[Position]]: ...
-    def snapshot(self) -> dict: ...
+
+    def reset(self) -> None:
+        """Limpa a memoria da base de conhecimento."""
+        ...
+
+    def set_agent_pos(self, pos: Position) -> None:
+        """Atualiza a posicao conhecida do agente."""
+        ...
+
+    def set_agent_energy(self, energy: int) -> None:
+        """Atualiza a energia conhecida do agente."""
+        ...
+
+    def set_agent_state(self, pos: Position, energy: int) -> None:
+        """Atualiza posicao e energia em uma unica chamada."""
+        ...
+
+    def update_perception(self, pos: Position, percepts: list[str]) -> None:
+        """Registra uma nova percepcao observada pelo agente."""
+        ...
+
+    def mark_gold_taken(self, pos: Position) -> None:
+        """Remove da KB um ouro ja coletado."""
+        ...
+
+    def mark_powerup_taken(self, pos: Position) -> None:
+        """Remove da KB um powerup ja coletado."""
+        ...
+
+    def likely_safe(self, pos: Position) -> bool:
+        """Indica se a KB considera uma posicao segura."""
+        ...
+
+    def is_visited(self, pos: Position) -> bool:
+        """Indica se uma posicao ja foi visitada fisicamente."""
+        ...
+
+    def is_known_gold(self, pos: Position) -> bool:
+        """Indica se ha ouro conhecido em uma posicao."""
+        ...
+
+    def is_risky(self, pos: Position) -> bool:
+        """Indica se uma posicao ainda possui risco conhecido ou suspeito."""
+        ...
+
+    def safe_unvisited_frontier(self) -> list[Position]:
+        """Lista casas seguras que ainda nao foram visitadas."""
+        ...
+
+    def decide(self) -> tuple[str, Optional[Position]]:
+        """Escolhe a proxima intencao logica do agente."""
+        ...
+
+    def snapshot(self) -> dict:
+        """Retorna uma copia estruturada do conhecimento atual."""
+        ...
 
 
 class PrologUnavailable(RuntimeError):
-    pass
+    """Sinaliza que o backend SWI-Prolog nao pode ser usado."""
 
 
 class SwiPrologKB:
@@ -64,6 +108,7 @@ class SwiPrologKB:
     backend = "swi-prolog"
 
     def __init__(self, kb_file: Path = KB_FILE, executable: str = "swipl") -> None:
+        """Inicia um processo SWI-Prolog persistente com a KB carregada."""
         if shutil.which(executable) is None:
             raise PrologUnavailable(f"{executable!r} not found in PATH")
         if not kb_file.exists():
@@ -84,6 +129,7 @@ class SwiPrologKB:
     # ---- low-level wire format ----
 
     def _send(self, term: str) -> str:
+        """Envia um termo ao Prolog e le a resposta ate o marcador final."""
         if self._proc.poll() is not None:
             raise PrologUnavailable("swipl process has exited")
         assert self._proc.stdin is not None and self._proc.stdout is not None
@@ -101,10 +147,12 @@ class SwiPrologKB:
         return "\n".join(out)
 
     def _do(self, goal: str) -> bool:
+        """Executa uma meta Prolog que deve responder apenas sucesso ou falha."""
         reply = self._send(f"do({goal})")
         return reply.strip().endswith("OK")
 
     def _query(self, goal: str, template: str) -> list[str]:
+        """Consulta solucoes Prolog e devolve os termos no formato textual."""
         reply = self._send(f"query({goal}, {template})")
         m = re.search(r"SOLUTIONS:(.*)", reply, re.DOTALL)
         if not m:
@@ -117,48 +165,62 @@ class SwiPrologKB:
     # ---- public KB API ----
 
     def reset(self) -> None:
+        """Reinicia todos os fatos dinamicos da base Prolog."""
         self._do("reset_kb")
 
     def set_exit(self, pos: Position) -> None:
+        """Registra no Prolog qual posicao funciona como saida."""
         self._do(f"set_exit({_pos(pos)})")
 
     def set_agent_pos(self, pos: Position) -> None:
+        """Sincroniza a posicao atual do agente com a KB Prolog."""
         self._do(f"set_agent_pos({_pos(pos)})")
 
     def set_agent_energy(self, energy: int) -> None:
+        """Sincroniza a energia atual do agente com a KB Prolog."""
         self._do(f"set_agent_energy({energy})")
 
     def set_agent_state(self, pos: Position, energy: int) -> None:
+        """Sincroniza posicao e energia do agente em uma unica chamada."""
         self._do(f"set_agent_state({_pos(pos)}, {energy})")
 
     def update_perception(self, pos: Position, percepts: list[str]) -> None:
+        """Envia ao Prolog as percepcoes observadas na posicao atual."""
         plist = "[" + ",".join(percepts) + "]"
         self._do(f"update_perception({_pos(pos)}, {plist})")
 
     def mark_gold_taken(self, pos: Position) -> None:
+        """Remove o ouro coletado da KB e incrementa o contador interno."""
         self._do(f"mark_gold_taken({_pos(pos)})")
         self._do("inc_gold")
 
     def mark_powerup_taken(self, pos: Position) -> None:
+        """Remove um powerup coletado da memoria Prolog."""
         self._do(f"mark_powerup_taken({_pos(pos)})")
 
     def likely_safe(self, pos: Position) -> bool:
+        """Pergunta ao Prolog se uma posicao e considerada segura."""
         return self._do(f"likely_safe({_pos(pos)})")
 
     def is_visited(self, pos: Position) -> bool:
+        """Pergunta ao Prolog se uma posicao ja foi visitada."""
         return self._do(f"visited({_pos(pos)})")
 
     def is_known_gold(self, pos: Position) -> bool:
+        """Pergunta ao Prolog se ha ouro conhecido em uma posicao."""
         return self._do(f"gold_seen({_pos(pos)})")
 
     def is_risky(self, pos: Position) -> bool:
+        """Pergunta ao Prolog se uma posicao ainda e arriscada."""
         return self._do(f"risky({_pos(pos)})")
 
     def safe_unvisited_frontier(self) -> list[Position]:
+        """Busca no Prolog as celulas seguras que faltam visitar."""
         sols = self._query("unvisited_safe_frontier(P)", "P")
         return [_parse_pos(s) for s in sols]
 
     def decide(self) -> tuple[str, Optional[Position]]:
+        """Traduz a decisao Prolog para a tupla usada pelo agente Python."""
         sols = self._query("decide(A)", "A")
         if not sols:
             return "sair", None
@@ -173,6 +235,7 @@ class SwiPrologKB:
         return "sair", None
 
     def snapshot(self) -> dict:
+        """Monta um resumo Python do estado atual da KB Prolog."""
         compact = self._compact_snapshot()
         if compact is not None:
             return compact
@@ -200,12 +263,14 @@ class SwiPrologKB:
         }
 
     def _compact_snapshot(self) -> Optional[dict]:
+        """Tenta obter o snapshot completo em uma unica consulta Prolog."""
         sols = self._query("snapshot_data(S)", "S")
         if not sols:
             return None
         return _parse_snapshot_term(sols[0])
 
     def close(self) -> None:
+        """Encerra o processo Prolog associado a esta KB."""
         try:
             if self._proc.stdin and not self._proc.stdin.closed:
                 self._proc.stdin.close()
@@ -217,14 +282,17 @@ class SwiPrologKB:
             pass
 
     def __del__(self) -> None:
+        """Garante a liberacao do processo Prolog ao destruir o objeto."""
         self.close()
 
 
 def _pos(p: Position) -> str:
+    """Formata uma posicao Python como termo R/C aceito pelo Prolog."""
     return f"{p[0]}/{p[1]}"
 
 
 def _parse_pos(text: str) -> Position:
+    """Converte um termo textual R/C vindo do Prolog para tupla Python."""
     text = text.strip()
     m = re.match(r"(\d+)\s*/\s*(\d+)", text)
     if not m:
@@ -233,6 +301,7 @@ def _parse_pos(text: str) -> Position:
 
 
 def _parse_int(sols: list[str]) -> int:
+    """Extrai um inteiro da primeira solucao textual retornada pelo Prolog."""
     if not sols:
         return 0
     try:
@@ -267,6 +336,7 @@ def _split_top_level(body: str) -> list[str]:
 
 
 def _parse_pos_list(text: str) -> list[Position]:
+    """Converte uma lista textual de posicoes Prolog para tuplas Python."""
     text = text.strip()
     if text == "[]":
         return []
@@ -274,6 +344,7 @@ def _parse_pos_list(text: str) -> list[Position]:
 
 
 def _parse_snapshot_term(text: str) -> Optional[dict]:
+    """Interpreta o termo snapshot(...) compacto produzido pela KB Prolog."""
     text = text.strip()
     if not text.startswith("snapshot(") or not text.endswith(")"):
         return None

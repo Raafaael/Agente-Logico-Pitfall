@@ -36,6 +36,8 @@ Position = Tuple[int, int]
 
 
 class CellType(str, Enum):
+    """Enumera os tipos de celula que podem aparecer no labirinto."""
+
     EMPTY = "empty"
     PIT = "pit"
     ENEMY_SMALL = "enemy_small"
@@ -46,6 +48,7 @@ class CellType(str, Enum):
 
     @classmethod
     def from_symbol(cls, sym: str) -> "CellType":
+        """Converte o simbolo de um arquivo de mapa para o tipo interno."""
         # Primary symbols match the teacher's reference (legacy/main.pl):
         # P=pit, d=small enemy, D=big enemy, T=teleporter, O=gold, U=powerup.
         # Aliases (e/E/G/+) are accepted to keep older test fixtures compatible.
@@ -64,6 +67,7 @@ class CellType(str, Enum):
 
     @property
     def symbol(self) -> str:
+        """Retorna o simbolo usado ao salvar ou exibir este tipo de celula."""
         return {
             CellType.EMPTY: ".",
             CellType.PIT: "P",
@@ -76,6 +80,8 @@ class CellType(str, Enum):
 
 
 class Direction(str, Enum):
+    """Representa as quatro orientacoes possiveis do agente."""
+
     NORTH = "north"
     EAST = "east"
     SOUTH = "south"
@@ -83,6 +89,7 @@ class Direction(str, Enum):
 
     @property
     def delta(self) -> Tuple[int, int]:
+        """Informa o deslocamento cartesiano produzido ao andar nessa direcao."""
         return {
             Direction.NORTH: (0, 1),
             Direction.EAST: (1, 0),
@@ -91,25 +98,30 @@ class Direction(str, Enum):
         }[self]
 
     def turn_right(self) -> "Direction":
+        """Retorna a direcao obtida ao girar 90 graus para a direita."""
         order = [Direction.NORTH, Direction.EAST, Direction.SOUTH, Direction.WEST]
         return order[(order.index(self) + 1) % 4]
 
     def turn_left(self) -> "Direction":
+        """Retorna a direcao obtida ao girar 90 graus para a esquerda."""
         order = [Direction.NORTH, Direction.EAST, Direction.SOUTH, Direction.WEST]
         return order[(order.index(self) - 1) % 4]
 
     @property
     def short(self) -> str:
+        """Fornece a abreviacao usada nos renderizadores de status."""
         return {"north": "N", "east": "E", "south": "S", "west": "W"}[self.value]
 
     @property
     def pt(self) -> str:
+        """Fornece o nome em portugues usado em mapas legados."""
         # Portuguese label, matching legacy/main.pl conventions.
         return {"north": "norte", "east": "leste",
                 "south": "sul", "west": "oeste"}[self.value]
 
     @classmethod
     def from_delta(cls, delta: Tuple[int, int]) -> "Direction":
+        """Converte um deslocamento ortogonal em uma direcao."""
         for d in cls:
             if d.delta == delta:
                 return d
@@ -117,6 +129,7 @@ class Direction(str, Enum):
 
     @classmethod
     def parse(cls, raw: str) -> "Direction":
+        """Interpreta nomes e abreviacoes de direcao vindos de entrada externa."""
         raw = raw.strip().lower()
         aliases = {
             "n": cls.NORTH, "north": cls.NORTH, "norte": cls.NORTH,
@@ -130,6 +143,8 @@ class Direction(str, Enum):
 
 
 class Action(str, Enum):
+    """Define as acoes concretas aceitas pelo ambiente."""
+
     WALK = "andar"
     TURN_LEFT = "virar_a_esquerda"
     TURN_RIGHT = "virar_a_direita"
@@ -139,6 +154,8 @@ class Action(str, Enum):
 
 @dataclass
 class Percept:
+    """Agrupa os sinais que o agente percebe na sala atual."""
+
     steps: bool = False     # adjacente a inimigo (som de passos)
     breeze: bool = False    # adjacente a poco (brisa)
     flash: bool = False     # adjacente a teletransporte (flash)
@@ -148,15 +165,19 @@ class Percept:
     scream: bool = False    # emitted when an enemy disappears after damaging the agent
 
     def as_list(self) -> list[str]:
+        """Retorna somente os nomes das percepcoes ativas."""
         return [k for k, v in self.__dict__.items() if v]
 
     def __str__(self) -> str:
+        """Formata as percepcoes para exibicao em logs e status."""
         active = self.as_list()
         return ",".join(active) if active else "nenhuma"
 
 
 @dataclass
 class StepResult:
+    """Descreve todos os efeitos observaveis apos uma acao do agente."""
+
     percept: Percept
     score_delta: int
     energy_delta: int
@@ -169,11 +190,13 @@ class StepResult:
 
 
 def in_bounds(pos: Position, size: int = GRID_SIZE) -> bool:
+    """Verifica se uma coordenada esta dentro dos limites do tabuleiro."""
     x, y = pos
     return 1 <= x <= size and 1 <= y <= size
 
 
 def orthogonal_neighbors(pos: Position, size: int = GRID_SIZE) -> list[Position]:
+    """Lista os vizinhos ortogonais validos de uma posicao."""
     x, y = pos
     out = []
     for dx, dy in ((0, 1), (1, 0), (0, -1), (-1, 0)):

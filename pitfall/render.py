@@ -25,6 +25,7 @@ _CELL_GLYPH = {
 
 def render_world(grid: Grid, agent_pos: Position, agent_dir: Direction,
                  reveal: bool = False, kb_snapshot: dict | None = None) -> str:
+    """Monta a representacao textual do mapa real ou do conhecimento do agente."""
     size = len(grid)
     lines: list[str] = []
     header = "    " + " ".join(f"{x:>2}" for x in range(1, size + 1))
@@ -64,11 +65,13 @@ def render_world(grid: Grid, agent_pos: Position, agent_dir: Direction,
 
 
 def _glyph_for_known(grid: Grid, pos: Position) -> str:
+    """Escolhe o simbolo de uma celula quando o mapa real esta visivel."""
     return _CELL_GLYPH[get_cell(grid, pos)]
 
 
 def _knowledge_glyph(pos, visited, safe, risk_pit, risk_enemy, risk_tele,
                      confirmed_pit, confirmed_enemy, confirmed_tele) -> str:
+    """Escolhe o simbolo que resume o estado conhecido ou suspeito da celula."""
     if pos in visited:
         return "o"
     if pos in confirmed_pit:
@@ -93,6 +96,7 @@ def _knowledge_glyph(pos, visited, safe, risk_pit, risk_enemy, risk_tele,
 
 def render_status(turn: int, agent_state, last_action: str, picked: str | None,
                   last_message: str) -> str:
+    """Formata uma linha de status com turno, estado, percepcao e ultima acao."""
     p = agent_state.last_percept
     return (
         f"turno={turn:>3} | pos={agent_state.pos} dir={agent_state.direction.short} "

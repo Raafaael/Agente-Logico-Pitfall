@@ -21,6 +21,8 @@ ASSET_DIR = Path(__file__).resolve().parent.parent / "assets"
 
 @dataclass
 class GuiConfig:
+    """Agrupa as opcoes necessarias para iniciar a interface grafica."""
+
     map_path: Path | None = None
     seed: int | None = None
     kb_backend: str = "auto"
@@ -32,6 +34,7 @@ class PitfallGUI:
     """Minimal viewer from base_projeto: board + score/energy bar."""
 
     def __init__(self, config: GuiConfig) -> None:
+        """Inicializa janela, estado da partida, imagens e loop automatico."""
         self.config = config
         self.map_path = config.map_path
         self.current_seed = config.seed
@@ -56,6 +59,7 @@ class PitfallGUI:
         self._schedule_step()
 
     def run(self) -> None:
+        """Inicia o loop principal da interface Tkinter."""
         self.root.mainloop()
 
     # ------------------------------------------------------------------
@@ -63,6 +67,7 @@ class PitfallGUI:
     # ------------------------------------------------------------------
 
     def _build_layout(self) -> None:
+        """Monta o canvas do tabuleiro e a barra inferior de status."""
         size_px = CELL_SIZE * 12
         self.canvas = tk.Canvas(
             self.root,
@@ -95,6 +100,7 @@ class PitfallGUI:
         ).pack(side="right", padx=12, pady=4)
 
     def _load_images(self) -> None:
+        """Carrega e redimensiona os assets usados na renderizacao."""
         names = {
             "floor": "floor.png",
             "floor_inferred": "bw_floor.png",
@@ -120,6 +126,7 @@ class PitfallGUI:
                     pass
 
     def _bind_keys(self) -> None:
+        """Configura atalhos de teclado para pausa, passo unico e reset."""
         self.root.bind("<space>", lambda _event: self._toggle_pause())
         self.root.bind("<Return>", lambda _event: self._step_once())
         self.root.bind("r", lambda _event: self._reset_game())
@@ -130,6 +137,7 @@ class PitfallGUI:
     # ------------------------------------------------------------------
 
     def _new_game(self) -> None:
+        """Cria um novo ambiente e agente a partir de mapa fixo ou aleatorio."""
         try:
             if self.map_path is not None:
                 grid, meta = load_map_from_file(self.map_path)
@@ -185,6 +193,7 @@ class PitfallGUI:
         self._refresh()
 
     def _reset_game(self) -> None:
+        """Cancela eventos pendentes e reinicia a partida atual."""
         if self.after_id is not None:
             try:
                 self.root.after_cancel(self.after_id)
@@ -199,6 +208,7 @@ class PitfallGUI:
     # ------------------------------------------------------------------
 
     def _schedule_step(self) -> None:
+        """Agenda o proximo passo automatico se a partida ainda estiver ativa."""
         if self.env is None or self.env.game_over:
             return
         if self.turn >= self.config.max_steps:
@@ -207,10 +217,12 @@ class PitfallGUI:
         self.after_id = self.root.after(delay_ms, self._auto_step)
 
     def _auto_step(self) -> None:
+        """Executa um passo automatico e agenda o seguinte."""
         self._step_once()
         self._schedule_step()
 
     def _toggle_pause(self) -> None:
+        """Alterna entre execucao automatica e pausa."""
         if self.after_id is not None:
             try:
                 self.root.after_cancel(self.after_id)
@@ -221,6 +233,7 @@ class PitfallGUI:
             self._schedule_step()
 
     def _step_once(self) -> None:
+        """Executa um turno completo: observar, decidir, agir e redesenhar."""
         if self.env is None or self.agent is None:
             return
         if (
@@ -240,6 +253,7 @@ class PitfallGUI:
         self._refresh()
 
     def _observe_current(self) -> None:
+        """Envia ao agente a percepcao da posicao atual do ambiente."""
         if self.env is None or self.agent is None:
             return
         percept = self.env.get_percept()
@@ -256,12 +270,14 @@ class PitfallGUI:
     # ------------------------------------------------------------------
 
     def _refresh(self) -> None:
+        """Atualiza o tabuleiro e os textos de pontuacao e energia."""
         self._draw_board()
         if self.env is not None:
             self.score_var.set(f"Pontuacao: {self.env.score}")
             self.energy_var.set(f"Energia: {self.env.energy}")
 
     def _draw_board(self) -> None:
+        """Redesenha somente as celulas conhecidas pela base de conhecimento."""
         if self.env is None or self.agent is None:
             return
         self.canvas.delete("all")
@@ -321,6 +337,7 @@ class PitfallGUI:
         self._draw_image(player_key, self.env.agent_pos)
 
     def _draw_image(self, key: str, pos: tuple[int, int]) -> None:
+        """Desenha um asset no canvas na coordenada logica informada."""
         pos_x, pos_y = pos
         x = (pos_x - 1) * CELL_SIZE
         y = (self.env.size - pos_y) * CELL_SIZE if self.env is not None else 0
@@ -334,6 +351,7 @@ class PitfallGUI:
         self.canvas.create_image(x, y, image=img, anchor="nw")
 
     def _on_close(self) -> None:
+        """Libera callbacks e fecha a KB antes de destruir a janela."""
         if self.after_id is not None:
             try:
                 self.root.after_cancel(self.after_id)
@@ -345,6 +363,7 @@ class PitfallGUI:
 
 
 def _resize_photo(photo: tk.PhotoImage, target: int) -> tk.PhotoImage:
+    """Redimensiona uma PhotoImage para uma celula quadrada do tabuleiro."""
     gcd_w = math.gcd(photo.width(), target)
     gcd_h = math.gcd(photo.height(), target)
     zoom_x = target // gcd_w
@@ -355,6 +374,7 @@ def _resize_photo(photo: tk.PhotoImage, target: int) -> tk.PhotoImage:
 
 
 def _player_image_key(direction: Direction) -> str:
+    """Retorna a chave do sprite do jogador para a direcao atual."""
     return {
         Direction.NORTH: "player_north",
         Direction.EAST: "player_east",
@@ -372,6 +392,7 @@ def launch_gui(
     max_steps: int = 400,
     delay: float = 0.25,
 ) -> None:
+    """Cria a configuracao da GUI e abre a janela do jogo."""
     _ = reveal
     config = GuiConfig(
         map_path=map_path,

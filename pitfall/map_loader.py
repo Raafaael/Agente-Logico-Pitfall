@@ -22,20 +22,24 @@ Grid = list[list[CellType]]
 
 
 def empty_grid(size: int = GRID_SIZE) -> Grid:
+    """Cria uma matriz quadrada preenchida apenas com celulas vazias."""
     return [[CellType.EMPTY for _ in range(size)] for _ in range(size)]
 
 
 def get_cell(grid: Grid, pos: Position) -> CellType:
+    """Le o conteudo de uma posicao usando coordenadas cartesianas do mapa."""
     x, y = pos
     return grid[len(grid) - y][x - 1]
 
 
 def set_cell(grid: Grid, pos: Position, ct: CellType) -> None:
+    """Atualiza uma posicao do mapa convertendo coordenadas para indice da matriz."""
     x, y = pos
     grid[len(grid) - y][x - 1] = ct
 
 
 def all_positions(size: int = GRID_SIZE) -> list[Position]:
+    """Lista todas as coordenadas validas do tabuleiro."""
     return [(x, y) for x in range(1, size + 1) for y in range(1, size + 1)]
 
 
@@ -173,6 +177,7 @@ def _load_prolog_map(text: str) -> tuple[Grid, dict]:
 
 
 def _grid_from_strings(rows: Iterable[str], size: int) -> Grid:
+    """Converte linhas textuais de simbolos em uma matriz de CellType."""
     rows = list(rows)
     if len(rows) != size:
         raise ValueError(f"Map must have {size} rows, got {len(rows)}")
@@ -227,6 +232,7 @@ def save_map_to_file(grid: Grid, path: str | Path, *, start: Position = START_PO
 
 
 def count_elements(grid: Grid) -> dict[str, int]:
+    """Conta quantas celulas existem de cada tipo no mapa."""
     counts: dict[str, int] = {}
     for row in grid:
         for cell in row:

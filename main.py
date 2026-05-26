@@ -22,6 +22,7 @@ from pitfall.types import Action, Direction, INITIAL_ENERGY, START_POS
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """Monta e interpreta os argumentos de linha de comando do jogo."""
     p = argparse.ArgumentParser(
         description="Pitfall logical agent (INF1771 - PUC-Rio).",
     )
@@ -48,6 +49,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Configura mapa, backend e modo de execucao antes de iniciar a partida."""
     args = parse_args(argv)
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
@@ -105,6 +107,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def run_loop(env: Environment, agent: Agent, args) -> int:
+    """Executa o ciclo principal de observacao, decisao e acao do agente."""
     last_action_str = "-"
     last_picked: str | None = None
     last_msg = "inicio"
@@ -147,6 +150,7 @@ def run_loop(env: Environment, agent: Agent, args) -> int:
 
 
 def print_final(env: Environment, agent: Agent, args) -> None:
+    """Exibe o resumo final da partida no terminal."""
     if not args.quiet:
         print()
     print("=" * 60)
