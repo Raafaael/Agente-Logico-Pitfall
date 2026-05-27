@@ -4,12 +4,15 @@
 :- dynamic memory/3.
 :- dynamic visitado/2.
 :- dynamic certeza/2.
+:- dynamic certeza_tipo/3.
+:- dynamic observado/3.
 :- dynamic energia/1.
 :- dynamic pontuacao/1.
 :- dynamic ouros_coletados/1.
 :- dynamic fim/1.
 :- dynamic impacto/0.
 :- dynamic grito/0.
+:- dynamic entrada_em/2.
 :- dynamic tile/3.
 :- dynamic map_size/2.
 
@@ -40,7 +43,8 @@ vivo :-
 
 limpa_eventos :-
     retractall(impacto),
-    retractall(grito).
+    retractall(grito),
+    retractall(entrada_em(_,_)).
 
 direita(norte,leste).
 direita(leste,sul).
@@ -72,6 +76,8 @@ reset_game :-
     retractall(memory(_,_,_)),
     retractall(visitado(_,_)),
     retractall(certeza(_,_)),
+    retractall(certeza_tipo(_,_,_)),
+    retractall(observado(_,_,_)),
     retractall(energia(_)),
     retractall(pontuacao(_)),
     retractall(posicao(_,_,_)),
@@ -134,18 +140,16 @@ verifica_player :-
 verifica_player :-
     posicao(X,Y,_),
     tile(X,Y,'D'),
-    retractall(tile(X,Y,_)),
-    assertz(tile(X,Y,'')),
-    assertz(grito),
+    entrada_em(X,Y),
+    retractall(entrada_em(X,Y)),
     aplica_dano(50),
     set_real(X,Y), !.
 
 verifica_player :-
     posicao(X,Y,_),
     tile(X,Y,'d'),
-    retractall(tile(X,Y,_)),
-    assertz(tile(X,Y,'')),
-    assertz(grito),
+    entrada_em(X,Y),
+    retractall(entrada_em(X,Y)),
     aplica_dano(20),
     set_real(X,Y), !.
 
@@ -163,6 +167,7 @@ teletransporta(X,Y,D) :-
     random_between(1,SY,NY),
     retractall(posicao(_,_,_)),
     assertz(posicao(NX,NY,D)),
+    assertz(entrada_em(NX,NY)),
     marca_visitado(NX,NY),
     set_real(NX,NY),
     atualiza_obs,
@@ -201,6 +206,7 @@ andar :-
         dentro_mapa(NX,NY)
     ->  retractall(posicao(_,_,_)),
         assertz(posicao(NX,NY,D)),
+        assertz(entrada_em(NX,NY)),
         marca_visitado(NX,NY),
         set_real(NX,NY),
         atualiza_pontuacao(-1)
@@ -243,7 +249,8 @@ sair :-
     vivo,
     posicao(1,1,_),
     ouros_coletados(N),
-    N > 0,
+    total_ouros(T),
+    N >= T,
     retractall(posicao(_,_,_)),
     assertz(posicao(1,1,saiu)),
     assert_unico(fim(saiu)), !.
@@ -292,7 +299,7 @@ adjacentes(L) :-
     findall(Z,(adjacente(X,Y), tile(X,Y,Z)), L).
 
 observacao_adj(brisa,L) :- member('P',L).
-observacao_adj(palmas,L) :- member('T',L).
+observacao_adj(flash,L) :- member('T',L).
 observacao_adj(passos,L) :- member('D',L).
 observacao_adj(passos,L) :- member('d',L).
 
@@ -301,9 +308,15 @@ atualiza_obs :-
     marca_visitado(X,Y),
     adj_cand_obs(LP),
     observacoes(LO),
+    registra_observacao(X,Y,LO),
     iter_pos_list(LP,LO),
+    propaga_certezas,
     observacao_certeza,
     observacao_vazia.
+
+registra_observacao(X,Y,LO) :-
+    retractall(observado(X,Y,_)),
+    assertz(observado(X,Y,LO)).
 
 adj_cand_obs(L) :-
     findall((X,Y), (adjacente(X,Y), \+ visitado(X,Y)), L).
@@ -341,10 +354,12 @@ adiciona_observacoes(X,Y,LO) :-
 
 observacao_certeza :-
     observacao_certeza(brisa),
-    observacao_certeza(palmas),
+    observacao_certeza(flash),
     observacao_certeza(passos).
 
 observacao_certeza(Z) :-
+    posicao(VX,VY,_),
+    \+ observacao_satisfeita(Z,VX,VY),
     findall(
         (X,Y),
         (
@@ -357,9 +372,42 @@ observacao_certeza(Z) :-
     ),
     (
         L = [(XX,YY)]
-    ->  assert_unico(certeza(XX,YY))
+    ->  confirma_obs(XX,YY,Z)
     ;   true
     ).
+
+propaga_certezas :-
+    propaga_certezas(brisa),
+    propaga_certezas(flash),
+    propaga_certezas(passos).
+
+propaga_certezas(Z) :-
+    observado(VX,VY,LO),
+    member(Z,LO),
+    \+ observacao_satisfeita(Z,VX,VY),
+    findall(
+        (X,Y),
+        (
+            adjacente_pos(VX,VY,X,Y),
+            \+ visitado(X,Y),
+            \+ certeza(X,Y),
+            memory(X,Y,M),
+            member(Z,M)
+        ),
+        L
+    ),
+    (
+        L = [(XX,YY)]
+    ->  confirma_obs(XX,YY,Z)
+    ;   true
+    ),
+    fail.
+
+propaga_certezas(_).
+
+observacao_satisfeita(Z,VX,VY) :-
+    adjacente_pos(VX,VY,X,Y),
+    certeza_tipo(X,Y,Z).
 
 observacao_vazia :-
     findall((X,Y), (memory(X,Y,[]), \+ certeza(X,Y)), LP),
@@ -376,16 +424,16 @@ set_real(X,Y) :-
 
 set_real2(X,Y) :-
     tile(X,Y,'P'),
-    atualiza_memoria_real(X,Y,[brisa]), !.
+    confirma_real(X,Y,brisa), !.
 set_real2(X,Y) :-
     tile(X,Y,'O'),
     atualiza_memoria_real(X,Y,[brilho]), !.
 set_real2(X,Y) :-
     tile(X,Y,'T'),
-    atualiza_memoria_real(X,Y,[palmas]), !.
+    confirma_real(X,Y,flash), !.
 set_real2(X,Y) :-
     (tile(X,Y,'D') ; tile(X,Y,'d')),
-    atualiza_memoria_real(X,Y,[passos]), !.
+    confirma_real(X,Y,passos), !.
 set_real2(X,Y) :-
     tile(X,Y,'U'),
     atualiza_memoria_real(X,Y,[reflexo]), !.
@@ -395,6 +443,15 @@ set_real2(X,Y) :-
 atualiza_memoria_real(X,Y,Info) :-
     retractall(memory(X,Y,_)),
     assertz(memory(X,Y,Info)).
+
+confirma_real(X,Y,Z) :-
+    atualiza_memoria_real(X,Y,[Z]),
+    assert_unico(certeza_tipo(X,Y,Z)).
+
+confirma_obs(X,Y,Z) :-
+    atualiza_memoria_real(X,Y,[Z]),
+    assert_unico(certeza(X,Y)),
+    assert_unico(certeza_tipo(X,Y,Z)).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Predicados de conhecimento usados pelo A* em Python
@@ -412,23 +469,23 @@ seguro(X,Y) :-
     memory(X,Y,M),
     \+ member(brisa,M),
     \+ member(passos,M),
-    \+ member(palmas,M).
+    \+ member(flash,M).
 
 fronteira_segura(X,Y) :-
     seguro(X,Y),
     \+ visitado(X,Y).
 
 poco_confirmado(X,Y) :-
-    certeza(X,Y),
+    certeza_tipo(X,Y,brisa),
     tem_obs(X,Y,brisa).
 
 inimigo_confirmado(X,Y) :-
-    certeza(X,Y),
+    certeza_tipo(X,Y,passos),
     tem_obs(X,Y,passos).
 
 teleporte_confirmado(X,Y) :-
-    certeza(X,Y),
-    tem_obs(X,Y,palmas).
+    certeza_tipo(X,Y,flash),
+    tem_obs(X,Y,flash).
 
 risco_poco(X,Y) :-
     \+ visitado(X,Y),
@@ -440,7 +497,7 @@ risco_inimigo(X,Y) :-
 
 risco_teleporte(X,Y) :-
     \+ visitado(X,Y),
-    tem_obs(X,Y,palmas).
+    tem_obs(X,Y,flash).
 
 arriscado(X,Y) :-
     risco_poco(X,Y)
@@ -455,6 +512,8 @@ fronteira_arriscada(X,Y) :-
     \+ visitado(X,Y),
     \+ seguro(X,Y),
     \+ poco_confirmado(X,Y),
+    \+ inimigo_confirmado(X,Y),
+    \+ teleporte_confirmado(X,Y),
     (
         visitado(VX,VY)
     ;   certeza(VX,VY)
@@ -464,12 +523,24 @@ fronteira_arriscada(X,Y) :-
 risco_score(X,Y,10000) :- poco_confirmado(X,Y), !.
 risco_score(X,Y,Score) :-
     conteudo_memoria(X,Y,M),
-    (member(brisa,M) -> B = 900 ; B = 0),
-    (member(passos,M) -> P = 100 ; P = 0),
-    (member(palmas,M) -> T = 220 ; T = 0),
-    (inimigo_confirmado(X,Y) -> IC = 120 ; IC = 0),
-    (teleporte_confirmado(X,Y) -> TC = 280 ; TC = 0),
+    (member(brisa,M) -> suporte_obs(brisa,X,Y,SB), B is 900 * max(1,SB) ; B = 0),
+    (member(passos,M) -> suporte_obs(passos,X,Y,SP), P is 700 * max(1,SP) ; P = 0),
+    (member(flash,M) -> suporte_obs(flash,X,Y,ST), T is 900 * max(1,ST) ; T = 0),
+    (inimigo_confirmado(X,Y) -> IC = 3000 ; IC = 0),
+    (teleporte_confirmado(X,Y) -> TC = 3500 ; TC = 0),
     Score is 10 + B + P + T + IC + TC.
+
+suporte_obs(Z,X,Y,N) :-
+    findall(
+        1,
+        (
+            observado(VX,VY,LO),
+            member(Z,LO),
+            adjacente_pos(VX,VY,X,Y)
+        ),
+        L
+    ),
+    length(L,N).
 
 sem_alvo_seguro :-
     \+ fronteira_segura(_,_),
@@ -523,29 +594,12 @@ meta_candidata(sair,1,1,-80000) :-
     total_ouros(T),
     N >= T, !.
 
-meta_candidata(sair,1,1,-76000) :-
-    posicao(1,1,_),
-    energia(E),
-    E =< 25,
-    ouros_coletados(N),
-    N > 0,
-    sem_alvo_seguro, !.
-
 meta_candidata(mover,1,1,-70000) :-
     posicao(X,Y,_),
     (X =\= 1 ; Y =\= 1),
     ouros_coletados(N),
     total_ouros(T),
     N >= T, !.
-
-meta_candidata(mover,1,1,-68000) :-
-    posicao(X,Y,_),
-    (X =\= 1 ; Y =\= 1),
-    energia(E),
-    E =< 25,
-    ouros_coletados(N),
-    N > 0,
-    sem_alvo_seguro, !.
 
 meta_candidata(mover,X,Y,Custo) :-
     posicao(PX,PY,_),
@@ -592,9 +646,8 @@ meta_candidata(mover,1,1,90000) :-
 
 meta_decisao(Tipo,X,Y) :-
     findall(cand(C,Tipo0,X0,Y0), meta_candidata(Tipo0,X0,Y0,C), L),
+    L \= [],
     sort(L, [cand(_,Tipo,X,Y)|_]), !.
-
-meta_decisao(sair,1,1).
 
 % Compatibilidade com o codigo-base: o Python principal usa meta_decisao/3 e A*,
 % mas executa_acao/1 permanece disponivel para consultas simples.
@@ -664,7 +717,7 @@ show_mem_info(X,Y) :-
     memory(X,Y,Z),
     ((visitado(X,Y), write('.'), !) ; (\+ certeza(X,Y), write('?'), !) ; write('!')),
     ((member(brisa,Z), write('P')) ; write(' ')),
-    ((member(palmas,Z), write('T')) ; write(' ')),
+    ((member(flash,Z), write('T')) ; write(' ')),
     ((member(brilho,Z), write('O')) ; write(' ')),
     ((member(passos,Z), write('D')) ; write(' ')),
     ((member(reflexo,Z), write('U')) ; write(' ')), !.

@@ -427,7 +427,7 @@ def update_prolog():
             for s in z.value:
                 if str(s) == "brisa":
                     mapa[y.get_value() - 1][x.get_value() - 1] += "P"
-                elif str(s) == "palmas":
+                elif str(s) == "flash":
                     mapa[y.get_value() - 1][x.get_value() - 1] += "T"
                 elif str(s) == "passos":
                     mapa[y.get_value() - 1][x.get_value() - 1] += "D"
