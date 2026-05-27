@@ -10,7 +10,6 @@ from pyswip import Functor, Prolog, Query, Variable
 
 from TreeNode import TreeNode
 
-
 BASE_DIR = pathlib.Path(__file__).resolve().parent
 PROJECT_DIR = BASE_DIR.parent
 ASSETS_DIR = PROJECT_DIR / "assets"
@@ -131,14 +130,7 @@ def load_map_from_file():
 
 def load_random_map():
     rng = random.Random(args.seed)
-    elements = (
-        ["P"] * 8
-        + ["T"] * 4
-        + ["D"] * 2
-        + ["d"] * 2
-        + ["O"] * 3
-        + ["U"] * 3
-    )
+    elements = ["P"] * 8 + ["T"] * 4 + ["D"] * 2 + ["d"] * 2 + ["O"] * 3 + ["U"] * 3
     positions = [(x, y) for x in range(1, 13) for y in range(1, 13) if (x, y) != (1, 1)]
     safe_first_step = rng.choice([(2, 1), (1, 2)])
     positions.remove(safe_first_step)
@@ -629,7 +621,9 @@ def draw_screen(screen):
         x = 0
         for i in j:
             if (x + 1, 12 - y) in visitados:
-                screen.blit(img_floor, (x * img_floor.get_width(), y * img_floor.get_height()))
+                screen.blit(
+                    img_floor, (x * img_floor.get_width(), y * img_floor.get_height())
+                )
             else:
                 screen.blit(
                     bw_img_floor,
@@ -638,7 +632,9 @@ def draw_screen(screen):
 
             if mapa[11 - y][x].find("P") > -1:
                 if (x + 1, 12 - y) in certezas:
-                    screen.blit(img_pit, (x * img_pit.get_width(), y * img_pit.get_height()))
+                    screen.blit(
+                        img_pit, (x * img_pit.get_width(), y * img_pit.get_height())
+                    )
                 else:
                     screen.blit(
                         bw_img_pit,
@@ -647,7 +643,9 @@ def draw_screen(screen):
 
             if mapa[11 - y][x].find("T") > -1:
                 if (x + 1, 12 - y) in certezas:
-                    screen.blit(img_bat, (x * img_bat.get_width(), y * img_bat.get_height()))
+                    screen.blit(
+                        img_bat, (x * img_bat.get_width(), y * img_bat.get_height())
+                    )
                 else:
                     screen.blit(
                         bw_img_bat,
@@ -692,7 +690,9 @@ def draw_screen(screen):
 
             if mapa[11 - y][x].find("O") > -1:
                 if (x + 1, 12 - y) in certezas:
-                    screen.blit(img_gold, (x * img_gold.get_width(), y * img_gold.get_height()))
+                    screen.blit(
+                        img_gold, (x * img_gold.get_width(), y * img_gold.get_height())
+                    )
                 else:
                     screen.blit(
                         bw_img_gold,
@@ -708,17 +708,26 @@ def draw_screen(screen):
                 elif player_pos[2] == "sul":
                     screen.blit(
                         img_player_down,
-                        (x * img_player_down.get_width(), y * img_player_down.get_height()),
+                        (
+                            x * img_player_down.get_width(),
+                            y * img_player_down.get_height(),
+                        ),
                     )
                 elif player_pos[2] == "leste":
                     screen.blit(
                         img_player_right,
-                        (x * img_player_right.get_width(), y * img_player_right.get_height()),
+                        (
+                            x * img_player_right.get_width(),
+                            y * img_player_right.get_height(),
+                        ),
                     )
                 elif player_pos[2] == "oeste":
                     screen.blit(
                         img_player_left,
-                        (x * img_player_left.get_width(), y * img_player_left.get_height()),
+                        (
+                            x * img_player_left.get_width(),
+                            y * img_player_left.get_height(),
+                        ),
                     )
                 elif player_pos[2] == "saiu":
                     screen.blit(
@@ -733,14 +742,22 @@ def draw_screen(screen):
             x += 1
         y += 1
 
-    status = "saiu" if player_pos[2] == "saiu" else ("morto" if player_pos[2] == "morto" else "")
+    status = (
+        "saiu"
+        if player_pos[2] == "saiu"
+        else ("morto" if player_pos[2] == "morto" else "")
+    )
     t = sys_font.render("Pontuacao: " + str(pontuacao), False, (255, 255, 255))
     screen.blit(t, t.get_rect(top=height + 5, left=20))
 
-    t = sys_font.render(last_action + (" " + status if status else ""), False, (255, 255, 255))
+    t = sys_font.render(
+        last_action + (" " + status if status else ""), False, (255, 255, 255)
+    )
     screen.blit(t, t.get_rect(top=height + 5, left=width / 2 - 70))
 
-    t = sys_font.render("E: " + str(energia) + "  O: " + str(ouros_coletados), False, (255, 255, 255))
+    t = sys_font.render(
+        "E: " + str(energia) + "  O: " + str(ouros_coletados), False, (255, 255, 255)
+    )
     screen.blit(t, t.get_rect(top=height + 5, left=width - 160))
 
 

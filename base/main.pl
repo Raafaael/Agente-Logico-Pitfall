@@ -134,8 +134,8 @@ verifica_player :- \+ vivo, !.
 verifica_player :-
     posicao(X,Y,_),
     tile(X,Y,'P'),
-    atualiza_pontuacao(-1000),
-    mata_jogador, !.
+    atualiza_energia(-100),
+    atualiza_pontuacao(-1000), !.
 
 verifica_player :-
     posicao(X,Y,_),
