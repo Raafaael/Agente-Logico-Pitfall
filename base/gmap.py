@@ -215,6 +215,48 @@ def get_candidates():
     return candidates
 
 
+def current_memory():
+    x, y = player_pos[0], player_pos[1]
+    result = list(prolog.query(f"conteudo_memoria({x},{y},M)"))
+    if not result:
+        return []
+    return [atom(value) for value in result[0]["M"]]
+
+
+def escape_damage_action():
+    if "passos" not in current_memory():
+        return ""
+
+    current = (player_pos[0], player_pos[1])
+    safe_cells = query_cells("seguro")
+    visited_cells = query_cells("visitado")
+    confirmed_pits = query_cells("poco_confirmado")
+    confirmed_enemies = query_cells("inimigo_confirmado")
+    confirmed_teleports = query_cells("teleporte_confirmado")
+
+    options = []
+    for nb in neighbors(current):
+        if nb in confirmed_pits or nb in confirmed_enemies or nb in confirmed_teleports:
+            continue
+        if nb in safe_cells:
+            priority = 0
+        elif nb in visited_cells:
+            priority = 1
+        else:
+            priority = 2
+        target_direction = direction_between(current, nb)
+        turns = align_actions(player_pos[2], target_direction)
+        options.append((priority, len(turns), manhattan(nb, (1, 1)), nb, turns))
+
+    if not options:
+        return ""
+
+    _, _, _, target, turns = min(options)
+    if not turns:
+        return "andar"
+    return turns[0]
+
+
 def reconstruct_path(node):
     path = []
     while node is not None:
@@ -304,15 +346,25 @@ def plan_to(goal):
         return []
 
     safe_cells = query_cells("seguro")
+    visited_cells = query_cells("visitado")
     confirmed_pits = query_cells("poco_confirmado")
+    confirmed_enemies = query_cells("inimigo_confirmado")
+    confirmed_teleports = query_cells("teleporte_confirmado")
     safe_cells.add(current)
+    visited_cells.add(current)
 
     def walkable(pos):
         if pos in confirmed_pits:
             return False
+        if pos in confirmed_teleports:
+            return False
+        if pos in confirmed_enemies and pos != current and pos != goal:
+            return False
         if pos in blocked_cells:
             return False
         if pos == goal:
+            return True
+        if pos in visited_cells:
             return True
         return pos in safe_cells
 
@@ -327,6 +379,11 @@ def decisao():
 
     if not alive():
         return ""
+
+    escape_action = escape_damage_action()
+    if escape_action:
+        action_queue.clear()
+        return escape_action
 
     current = (player_pos[0], player_pos[1])
     if current != last_agent_cell:
@@ -350,8 +407,18 @@ def decisao():
             return action_queue.pop(0)
         unreachable_targets.add(target)
 
+    home_actions = plan_to((1, 1))
+    if home_actions:
+        action_queue.extend(home_actions)
+        return action_queue.pop(0)
+
     acoes = list(prolog.query("executa_acao(X)"))
-    return atom(acoes[0]["X"]) if acoes else ""
+    if not acoes:
+        return ""
+    fallback = atom(acoes[0]["X"])
+    if fallback == "sair" and current != (1, 1):
+        return "virar_direita"
+    return fallback
 
 
 def forward_position():

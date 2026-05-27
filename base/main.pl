@@ -335,6 +335,14 @@ observacao_certeza :-
     observacao_certeza(passos).
 
 observacao_certeza(Z) :-
+    observacoes(LO),
+    member(Z,LO),
+    \+ (
+        adjacente(AX,AY),
+        certeza(AX,AY),
+        memory(AX,AY,MA),
+        member(Z,MA)
+    ),
     findall(
         (X,Y),
         (
@@ -445,6 +453,8 @@ fronteira_arriscada(X,Y) :-
     \+ visitado(X,Y),
     \+ seguro(X,Y),
     \+ poco_confirmado(X,Y),
+    \+ inimigo_confirmado(X,Y),
+    \+ teleporte_confirmado(X,Y),
     (
         visitado(VX,VY)
     ;   certeza(VX,VY)
@@ -546,7 +556,7 @@ meta_candidata(mover,X,Y,Custo) :-
 
 meta_candidata(mover,X,Y,Custo) :-
     energia(E),
-    E =< 50,
+    E =< 80,
     posicao(PX,PY,_),
     powerup_conhecido(X,Y),
     (X =\= PX ; Y =\= PY),
@@ -567,7 +577,7 @@ meta_candidata(mover,X,Y,Custo) :-
     R < 10000,
     (
         energia(E),
-        E =< 70
+        E =< 50
     ->  \+ risco_inimigo(X,Y),
         \+ inimigo_confirmado(X,Y)
     ;   true
