@@ -1,6 +1,0 @@
-# Sem dependencias externas obrigatorias.
-# A GUI usa Tkinter, que faz parte da instalacao padrao do Python no Windows.
-#
-# A base de conhecimento Prolog roda via subprocesso `swipl` quando
-# disponivel; caso contrario o projeto cai automaticamente no fallback
-# puro em Python (pitfall/kb_python.py).
