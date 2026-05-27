@@ -9,7 +9,6 @@
 :- dynamic ouros_coletados/1.
 :- dynamic fim/1.
 :- dynamic impacto/0.
-:- dynamic grito/0.
 :- dynamic tile/3.
 :- dynamic map_size/2.
 
@@ -39,8 +38,7 @@ vivo :-
     D \= saiu.
 
 limpa_eventos :-
-    retractall(impacto),
-    retractall(grito).
+    retractall(impacto).
 
 direita(norte,leste).
 direita(leste,sul).
@@ -134,20 +132,12 @@ verifica_player :-
 verifica_player :-
     posicao(X,Y,_),
     tile(X,Y,'D'),
-    retractall(tile(X,Y,_)),
-    assertz(tile(X,Y,'')),
-    assertz(grito),
-    aplica_dano(50),
-    set_real(X,Y), !.
+    aplica_dano(50), !.
 
 verifica_player :-
     posicao(X,Y,_),
     tile(X,Y,'d'),
-    retractall(tile(X,Y,_)),
-    assertz(tile(X,Y,'')),
-    assertz(grito),
-    aplica_dano(20),
-    set_real(X,Y), !.
+    aplica_dano(20), !.
 
 verifica_player :-
     posicao(X,Y,D),
@@ -292,7 +282,7 @@ adjacentes(L) :-
     findall(Z,(adjacente(X,Y), tile(X,Y,Z)), L).
 
 observacao_adj(brisa,L) :- member('P',L).
-observacao_adj(palmas,L) :- member('T',L).
+observacao_adj(flash,L) :- member('T',L).
 observacao_adj(passos,L) :- member('D',L).
 observacao_adj(passos,L) :- member('d',L).
 
@@ -341,7 +331,7 @@ adiciona_observacoes(X,Y,LO) :-
 
 observacao_certeza :-
     observacao_certeza(brisa),
-    observacao_certeza(palmas),
+    observacao_certeza(flash),
     observacao_certeza(passos).
 
 observacao_certeza(Z) :-
@@ -382,7 +372,7 @@ set_real2(X,Y) :-
     atualiza_memoria_real(X,Y,[brilho]), !.
 set_real2(X,Y) :-
     tile(X,Y,'T'),
-    atualiza_memoria_real(X,Y,[palmas]), !.
+    atualiza_memoria_real(X,Y,[flash]), !.
 set_real2(X,Y) :-
     (tile(X,Y,'D') ; tile(X,Y,'d')),
     atualiza_memoria_real(X,Y,[passos]), !.
@@ -412,7 +402,7 @@ seguro(X,Y) :-
     memory(X,Y,M),
     \+ member(brisa,M),
     \+ member(passos,M),
-    \+ member(palmas,M).
+    \+ member(flash,M).
 
 fronteira_segura(X,Y) :-
     seguro(X,Y),
@@ -428,7 +418,7 @@ inimigo_confirmado(X,Y) :-
 
 teleporte_confirmado(X,Y) :-
     certeza(X,Y),
-    tem_obs(X,Y,palmas).
+    tem_obs(X,Y,flash).
 
 risco_poco(X,Y) :-
     \+ visitado(X,Y),
@@ -440,7 +430,7 @@ risco_inimigo(X,Y) :-
 
 risco_teleporte(X,Y) :-
     \+ visitado(X,Y),
-    tem_obs(X,Y,palmas).
+    tem_obs(X,Y,flash).
 
 arriscado(X,Y) :-
     risco_poco(X,Y)
@@ -466,7 +456,7 @@ risco_score(X,Y,Score) :-
     conteudo_memoria(X,Y,M),
     (member(brisa,M) -> B = 900 ; B = 0),
     (member(passos,M) -> P = 100 ; P = 0),
-    (member(palmas,M) -> T = 220 ; T = 0),
+    (member(flash,M) -> T = 220 ; T = 0),
     (inimigo_confirmado(X,Y) -> IC = 120 ; IC = 0),
     (teleporte_confirmado(X,Y) -> TC = 280 ; TC = 0),
     Score is 10 + B + P + T + IC + TC.
@@ -664,7 +654,7 @@ show_mem_info(X,Y) :-
     memory(X,Y,Z),
     ((visitado(X,Y), write('.'), !) ; (\+ certeza(X,Y), write('?'), !) ; write('!')),
     ((member(brisa,Z), write('P')) ; write(' ')),
-    ((member(palmas,Z), write('T')) ; write(' ')),
+    ((member(flash,Z), write('T')) ; write(' ')),
     ((member(brilho,Z), write('O')) ; write(' ')),
     ((member(passos,Z), write('D')) ; write(' ')),
     ((member(reflexo,Z), write('U')) ; write(' ')), !.
