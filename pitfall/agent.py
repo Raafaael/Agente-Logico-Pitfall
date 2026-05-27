@@ -166,15 +166,13 @@ class Agent:
         self.kb.update_perception(pos, active)
         self._invalidate_kb_cache()
         self._release_safe_blocks()
-        if (
-            self.state.last_action == Action.WALK
-            and energy < previous_energy
-            and not percept.scream
-        ):
+        if self.state.last_action == Action.WALK and energy < previous_energy:
+            damage = previous_energy - energy
             self.state.damaging_cells[pos] = max(
                 self.state.damaging_cells.get(pos, 0),
-                previous_energy - energy,
+                damage,
             )
+            self.state.blocked_cells.add(pos)
 
         self.state.pending.clear()
 
@@ -215,7 +213,9 @@ class Agent:
         releasable = {
             cell
             for cell in self.state.blocked_cells
-            if cell not in self.state.teleporter_cells and self.kb.likely_safe(cell)
+            if cell not in self.state.teleporter_cells
+            and cell not in self.state.damaging_cells
+            and self.kb.likely_safe(cell)
         }
         if releasable:
             self.state.blocked_cells -= releasable
@@ -400,9 +400,9 @@ class Agent:
 
         path = astar(self.state.pos, goal, walkable, size=self.size)
         if path is None and goal == self.exit_pos and self.state.gold_carried >= GOLD_TARGET:
-            path = astar(self.state.pos, goal, self._is_known_safe, size=self.size)
+            path = astar(self.state.pos, goal, self._is_safe_route_cell, size=self.size)
         if path is None and self.state.damaging_cells:
-            path = astar(self.state.pos, goal, self._is_known_safe, size=self.size)
+            path = astar(self.state.pos, goal, self._is_safe_route_cell, size=self.size)
         if path is None:
             return []
         return path_to_actions(path, self.state.direction)
@@ -450,6 +450,17 @@ class Agent:
                     snapshot,
                     include_risky=True,
                     banned=set(self.state.blocked_cells) | set(self.state.unreachable_targets),
+                )
+                or proposed
+            )
+        if proposed in self.state.damaging_cells:
+            return (
+                self._best_exploration_target(
+                    snapshot,
+                    include_risky=True,
+                    banned=set(self.state.blocked_cells)
+                    | set(self.state.damaging_cells)
+                    | set(self.state.unreachable_targets),
                 )
                 or proposed
             )
@@ -565,6 +576,7 @@ class Agent:
         candidates.discard(self.state.pos)
         candidates -= self.state.teleporter_cells
         candidates -= self.state.blocked_cells
+        candidates -= set(self.state.damaging_cells)
         candidates -= banned
         candidates -= self.state.unreachable_targets
 
@@ -693,10 +705,17 @@ class Agent:
         pode recusá-la se ela tiver causado dano relevante ou se tiver sido
         bloqueada temporariamente por um contexto de risco recente.
         """
-        damage = self.state.damaging_cells.get(pos, 0)
-        if damage >= 40:
+        if self.state.damaging_cells.get(pos, 0) > 0:
             return False
-        if damage > 0 and self.state.energy <= damage + 30:
+        if pos in self.state.teleporter_cells:
+            return False
+        if pos in self.state.blocked_cells:
+            return False
+        return self._is_known_safe(pos)
+
+    def _is_safe_route_cell(self, pos: Position) -> bool:
+        """Versao conservadora para fallbacks de rota."""
+        if pos in self.state.damaging_cells:
             return False
         if pos in self.state.teleporter_cells:
             return False

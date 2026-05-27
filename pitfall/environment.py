@@ -237,7 +237,6 @@ class Environment:
         if cell == CellType.ENEMY_SMALL:
             result["energy"] -= DAMAGE_SMALL
             result["score"] -= DAMAGE_SMALL
-            set_cell(self._grid, pos, CellType.EMPTY)
             self._last_scream = True
             result["message"] = (
                 f"atingido por inimigo pequeno (-{DAMAGE_SMALL} energia, "
@@ -248,7 +247,6 @@ class Environment:
         if cell == CellType.ENEMY_BIG:
             result["energy"] -= DAMAGE_BIG
             result["score"] -= DAMAGE_BIG
-            set_cell(self._grid, pos, CellType.EMPTY)
             self._last_scream = True
             result["message"] = (
                 f"atingido por inimigo grande (-{DAMAGE_BIG} energia, "

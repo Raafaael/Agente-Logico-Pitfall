@@ -10,8 +10,8 @@ from tkinter import messagebox
 
 from .agent import Agent
 from .environment import Environment
-from .map_loader import generate_random_map, load_map_from_file
-from .types import Direction, INITIAL_ENERGY, START_POS
+from .map_loader import generate_random_map, get_cell, load_map_from_file
+from .types import CellType, Direction, INITIAL_ENERGY, START_POS
 
 
 CELL_SIZE = 48
@@ -297,7 +297,7 @@ class PitfallGUI:
         confirmed_tele = set(map(tuple, snapshot.get("confirmed_teleport", [])))
         gold_seen = set(map(tuple, snapshot.get("gold_seen", [])))
         powerup_seen = set(map(tuple, snapshot.get("powerup_seen", [])))
-        enemy_damage = dict(snapshot.get("enemy_damage", []))
+        damaging_cells = set(self.agent.state.damaging_cells)
 
         for x in range(1, size + 1):
             for y in range(1, size + 1):
@@ -308,6 +308,7 @@ class PitfallGUI:
                     or pos in confirmed_pit
                     or pos in confirmed_enemy
                     or pos in confirmed_tele
+                    or pos in damaging_cells
                 )
                 if not is_known:
                     continue
@@ -315,12 +316,19 @@ class PitfallGUI:
                 base = "floor" if pos in visited else "floor_inferred"
                 self._draw_image(base, pos)
 
-                if pos in confirmed_pit:
+                if pos in damaging_cells:
+                    enemy_key = (
+                        "enemy_big"
+                        if get_cell(grid, pos) == CellType.ENEMY_BIG
+                        else "enemy_small"
+                    )
+                    self._draw_image(enemy_key, pos)
+                elif pos in confirmed_pit:
                     self._draw_image("pit", pos)
                 elif pos in confirmed_enemy:
-                    damage = enemy_damage.get(pos)
                     enemy_key = (
-                        "enemy_big" if damage is not None and damage >= 50
+                        "enemy_big"
+                        if get_cell(grid, pos) == CellType.ENEMY_BIG
                         else "enemy_small"
                     )
                     self._draw_image(enemy_key, pos)

@@ -54,7 +54,7 @@ Resultados obtidos nesta branch com os mapas fornecidos:
 - Score: cada acao custa `-1`, ouro vale `+1000`, dano de inimigo desconta o valor do dano, poco aplica `-1000` e morte aplica `-1000`.
 - Energia inicial `100`.
 - Inimigo pequeno tira `20` de energia e `20` de score; inimigo grande tira `50` de energia e `50` de score.
-- Ao encontrar um inimigo, ele causa dano, desaparece e o ambiente retorna a percepcao `scream` naquele turno.
+- Ao encontrar um inimigo, ele causa dano, permanece na celula e o ambiente retorna a percepcao `scream` naquele turno.
 - Poco encerra o jogo imediatamente.
 - Teletransporte move o agente para uma sala aleatoria, inclusive outra sala perigosa.
 - Powerup aparece como percepcao local, pode ficar guardado para depois e recupera ate `20` de energia ao executar `pegar`.
