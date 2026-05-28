@@ -100,6 +100,8 @@ blocked_cells = set()
 unreachable_targets = set()
 expected_walk_target = None
 last_agent_cell = (1, 1)
+candidate_plan_weight = 40
+candidate_plan_limit = 20
 
 
 def resolve_map_path(raw_path):
@@ -168,6 +170,16 @@ list(prolog.query("reset_game"))
 
 def atom(value):
     return str(value)
+
+
+def turn_left(direction):
+    order = ["norte", "leste", "sul", "oeste"]
+    return order[(order.index(direction) - 1) % len(order)]
+
+
+def turn_right(direction):
+    order = ["norte", "leste", "sul", "oeste"]
+    return order[(order.index(direction) + 1) % len(order)]
 
 
 def alive():
@@ -340,6 +352,59 @@ def path_to_actions(path, initial_direction):
     return actions
 
 
+def action_plan_to(goal, walkable):
+    start_pos = (player_pos[0], player_pos[1])
+    start_direction = player_pos[2]
+    start = (start_pos[0], start_pos[1], start_direction)
+    open_heap = [(manhattan(start_pos, goal), 0, 0, start, [])]
+    best_cost = {start: 0}
+    counter = 0
+
+    while open_heap:
+        _, cost, _, state, actions = heapq.heappop(open_heap)
+        x, y, direction = state
+        if cost != best_cost[state]:
+            continue
+        if (x, y) == goal:
+            return actions
+
+        for action, next_direction in (
+            ("virar_esquerda", turn_left(direction)),
+            ("virar_direita", turn_right(direction)),
+        ):
+            next_state = (x, y, next_direction)
+            next_cost = cost + 1
+            if next_cost < best_cost.get(next_state, 10**9):
+                best_cost[next_state] = next_cost
+                counter += 1
+                priority = next_cost + manhattan((x, y), goal)
+                heapq.heappush(
+                    open_heap,
+                    (priority, next_cost, counter, next_state, actions + [action]),
+                )
+
+        dx, dy = {
+            "norte": (0, 1),
+            "leste": (1, 0),
+            "sul": (0, -1),
+            "oeste": (-1, 0),
+        }[direction]
+        next_pos = (x + dx, y + dy)
+        if in_bounds(next_pos) and walkable(next_pos):
+            next_state = (next_pos[0], next_pos[1], direction)
+            next_cost = cost + 1
+            if next_cost < best_cost.get(next_state, 10**9):
+                best_cost[next_state] = next_cost
+                counter += 1
+                priority = next_cost + manhattan(next_pos, goal)
+                heapq.heappush(
+                    open_heap,
+                    (priority, next_cost, counter, next_state, actions + ["andar"]),
+                )
+
+    return []
+
+
 def plan_to(goal):
     current = (player_pos[0], player_pos[1])
     if current == goal:
@@ -368,10 +433,7 @@ def plan_to(goal):
             return True
         return pos in safe_cells
 
-    path = astar(current, goal, walkable)
-    if path is None:
-        return []
-    return path_to_actions(path, player_pos[2])
+    return action_plan_to(goal, walkable)
 
 
 def decisao():
@@ -393,19 +455,39 @@ def decisao():
     if action_queue:
         return action_queue.pop(0)
 
-    for _, tipo, x, y in get_candidates():
+    best_plan = None
+    checked_candidates = 0
+    seen_targets = set()
+    for score, tipo, x, y in get_candidates():
         if tipo in ("pegar", "sair"):
             return tipo
         if tipo != "mover":
             continue
         target = (x, y)
+        if target in seen_targets:
+            continue
+        seen_targets.add(target)
         if target in unreachable_targets or target in blocked_cells:
             continue
         actions = plan_to(target)
-        if actions:
-            action_queue.extend(actions)
-            return action_queue.pop(0)
-        unreachable_targets.add(target)
+        checked_candidates += 1
+        if not actions:
+            unreachable_targets.add(target)
+            continue
+        plan_key = (
+            score + len(actions) * candidate_plan_weight,
+            score,
+            len(actions),
+            actions,
+        )
+        if best_plan is None or plan_key < best_plan:
+            best_plan = plan_key
+        if checked_candidates >= candidate_plan_limit:
+            break
+
+    if best_plan is not None:
+        action_queue.extend(best_plan[-1])
+        return action_queue.pop(0)
 
     home_actions = plan_to((1, 1))
     if home_actions:

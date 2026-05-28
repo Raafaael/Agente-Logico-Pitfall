@@ -489,7 +489,10 @@ ganho_info(X,Y,G) :-
         1,
         (
             adjacente_pos(X,Y,NX,NY),
-            \+ visitado(NX,NY)
+            \+ visitado(NX,NY),
+            \+ poco_confirmado(NX,NY),
+            \+ inimigo_confirmado(NX,NY),
+            \+ teleporte_confirmado(NX,NY)
         ),
         L
     ),
