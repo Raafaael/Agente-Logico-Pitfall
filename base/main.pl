@@ -370,6 +370,8 @@ observacao_certeza(Z) :-
     ;   true
     ).
 
+observacao_certeza(_).
+
 observacao_vazia :-
     findall((X,Y), (memory(X,Y,[]), \+ certeza(X,Y)), LP),
     observacao_vazia(LP).
@@ -517,9 +519,30 @@ powerup_conhecido(X,Y) :-
     tem_obs(X,Y,reflexo),
     seguro(X,Y).
 
+fuga_inimigo_alvo(X,Y,Custo) :-
+    posicao(PX,PY,_),
+    conteudo_memoria(PX,PY,M),
+    member(passos,M),
+    adjacente_pos(PX,PY,X,Y),
+    \+ poco_confirmado(X,Y),
+    \+ inimigo_confirmado(X,Y),
+    \+ teleporte_confirmado(X,Y),
+    (
+        seguro(X,Y)
+    ->  Prioridade = 0
+    ;   visitado(X,Y)
+    ->  Prioridade = 50
+    ;   Prioridade = 200
+    ),
+    manhattan(X,Y,1,1,D),
+    Custo is -95000 + Prioridade + D.
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Tomada de decisao em Prolog
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+meta_candidata(mover,X,Y,Custo) :-
+    fuga_inimigo_alvo(X,Y,Custo).
 
 meta_candidata(pegar,0,0,-100000) :-
     posicao(X,Y,_),
@@ -591,7 +614,7 @@ meta_candidata(mover,X,Y,Custo) :-
     R < 10000,
     (
         energia(E),
-        E =< 50
+        E =< 30
     ->  \+ risco_inimigo(X,Y),
         \+ inimigo_confirmado(X,Y)
     ;   true
@@ -607,8 +630,6 @@ meta_candidata(mover,1,1,90000) :-
 meta_decisao(Tipo,X,Y) :-
     findall(cand(C,Tipo0,X0,Y0), meta_candidata(Tipo0,X0,Y0,C), L),
     sort(L, [cand(_,Tipo,X,Y)|_]), !.
-
-meta_decisao(sair,1,1).
 
 % Compatibilidade com o codigo-base: o Python principal usa meta_decisao/3 e A*,
 % mas executa_acao/1 permanece disponivel para consultas simples.
