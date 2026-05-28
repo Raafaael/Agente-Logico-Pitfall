@@ -46,7 +46,6 @@
 :- dynamic ouros_coletados/1.
 :- dynamic fim/1.
 :- dynamic impacto/0.
-:- dynamic grito/0.
 :- dynamic entrada_em/2.
 :- dynamic tile/3.
 :- dynamic map_size/2.
@@ -90,7 +89,6 @@ vivo :-
 % Eventos como impacto, grito e entrada em uma sala duram apenas uma acao.
 limpa_eventos :-
     retractall(impacto),
-    retractall(grito),
     retractall(entrada_em(_,_)).
 
 direita(norte,leste).

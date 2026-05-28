@@ -416,18 +416,6 @@ def plan_to(goal):
     return path_to_actions(path, player_pos[2])
 
 
-def fallback_action():
-    """Pede uma acao simples ao Prolog quando nao ha caminho planejado.
-
-    Esse fallback mantem compatibilidade com a estrutura original do trabalho,
-    onde o Prolog podia responder diretamente uma acao por ``executa_acao/1``.
-    """
-    acoes = list(prolog.query("executa_acao(X)"))
-    if acoes:
-        return atom(acoes[0]["X"])
-    return "virar_direita"
-
-
 def decisao():
     """Escolhe a proxima acao do agente automatico.
 
@@ -465,7 +453,10 @@ def decisao():
             return action_queue.pop(0)
         unreachable_targets.add(target)
 
-    return fallback_action()
+    acoes = list(prolog.query("executa_acao(X)"))
+    if acoes:
+        return atom(acoes[0]["X"])
+    return ""
 
 
 def forward_position():
