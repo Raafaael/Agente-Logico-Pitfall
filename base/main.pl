@@ -9,6 +9,7 @@
 :- dynamic ouros_coletados/1.
 :- dynamic fim/1.
 :- dynamic impacto/0.
+:- dynamic entrada_em/2.
 :- dynamic tile/3.
 :- dynamic map_size/2.
 
@@ -38,7 +39,8 @@ vivo :-
     D \= saiu.
 
 limpa_eventos :-
-    retractall(impacto).
+    retractall(impacto),
+    retractall(entrada_em(_,_)).
 
 direita(norte,leste).
 direita(leste,sul).
@@ -132,12 +134,18 @@ verifica_player :-
 verifica_player :-
     posicao(X,Y,_),
     tile(X,Y,'D'),
-    aplica_dano(50), !.
+    entrada_em(X,Y),
+    retractall(entrada_em(X,Y)),
+    aplica_dano(50),
+    set_real(X,Y), !.
 
 verifica_player :-
     posicao(X,Y,_),
     tile(X,Y,'d'),
-    aplica_dano(20), !.
+    entrada_em(X,Y),
+    retractall(entrada_em(X,Y)),
+    aplica_dano(20),
+    set_real(X,Y), !.
 
 verifica_player :-
     posicao(X,Y,D),
@@ -153,6 +161,7 @@ teletransporta(X,Y,D) :-
     random_between(1,SY,NY),
     retractall(posicao(_,_,_)),
     assertz(posicao(NX,NY,D)),
+    assertz(entrada_em(NX,NY)),
     marca_visitado(NX,NY),
     set_real(NX,NY),
     atualiza_obs,
@@ -191,6 +200,7 @@ andar :-
         dentro_mapa(NX,NY)
     ->  retractall(posicao(_,_,_)),
         assertz(posicao(NX,NY,D)),
+        assertz(entrada_em(NX,NY)),
         marca_visitado(NX,NY),
         set_real(NX,NY),
         atualiza_pontuacao(-1)
@@ -233,7 +243,8 @@ sair :-
     vivo,
     posicao(1,1,_),
     ouros_coletados(N),
-    N > 0,
+    total_ouros(T),
+    N >= T,
     retractall(posicao(_,_,_)),
     assertz(posicao(1,1,saiu)),
     assert_unico(fim(saiu)), !.
