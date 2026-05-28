@@ -296,15 +296,25 @@ def plan_to(goal):
         return []
 
     safe_cells = query_cells("seguro")
+    visited_cells = query_cells("visitado")
     confirmed_pits = query_cells("poco_confirmado")
+    confirmed_enemies = query_cells("inimigo_confirmado")
+    confirmed_teleports = query_cells("teleporte_confirmado")
     safe_cells.add(current)
+    visited_cells.add(current)
 
     def walkable(pos):
         if pos in confirmed_pits:
             return False
+        if pos in confirmed_teleports:
+            return False
+        if pos in confirmed_enemies and pos != current and pos != goal:
+            return False
         if pos in blocked_cells:
             return False
         if pos == goal:
+            return True
+        if pos in visited_cells:
             return True
         return pos in safe_cells
 
@@ -341,6 +351,12 @@ def decisao():
             action_queue.extend(actions)
             return action_queue.pop(0)
         unreachable_targets.add(target)
+
+    if list(prolog.query("meta_candidata(mover,1,1,_)")):
+        home_actions = plan_to((1, 1))
+        if home_actions:
+            action_queue.extend(home_actions)
+            return action_queue.pop(0)
 
     acoes = list(prolog.query("executa_acao(X)"))
     if acoes:

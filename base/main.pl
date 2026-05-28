@@ -601,6 +601,20 @@ meta_candidata(mover,1,1,-70000) :-
 
 meta_candidata(mover,X,Y,Custo) :-
     posicao(PX,PY,_),
+    inimigo_confirmado(PX,PY),
+    adjacente_pos(PX,PY,X,Y),
+    (
+        seguro(X,Y)
+    ;   visitado(X,Y)
+    ),
+    \+ poco_confirmado(X,Y),
+    \+ inimigo_confirmado(X,Y),
+    \+ teleporte_confirmado(X,Y),
+    manhattan(X,Y,1,1,D),
+    Custo is -55000 + D.
+
+meta_candidata(mover,X,Y,Custo) :-
+    posicao(PX,PY,_),
     ouro_conhecido(X,Y),
     (X =\= PX ; Y =\= PY),
     manhattan(PX,PY,X,Y,D),
