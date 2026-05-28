@@ -314,13 +314,6 @@ def plan_to(goal):
     return path_to_actions(path, player_pos[2])
 
 
-def fallback_action():
-    acoes = list(prolog.query("executa_acao(X)"))
-    if acoes:
-        return atom(acoes[0]["X"])
-    return "virar_direita"
-
-
 def decisao():
     global last_agent_cell
 
@@ -349,7 +342,10 @@ def decisao():
             return action_queue.pop(0)
         unreachable_targets.add(target)
 
-    return fallback_action()
+    acoes = list(prolog.query("executa_acao(X)"))
+    if acoes:
+        return atom(acoes[0]["X"])
+    return ""
 
 
 def forward_position():

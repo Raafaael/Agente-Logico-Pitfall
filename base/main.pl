@@ -11,7 +11,6 @@
 :- dynamic ouros_coletados/1.
 :- dynamic fim/1.
 :- dynamic impacto/0.
-:- dynamic grito/0.
 :- dynamic entrada_em/2.
 :- dynamic tile/3.
 :- dynamic map_size/2.
@@ -43,7 +42,6 @@ vivo :-
 
 limpa_eventos :-
     retractall(impacto),
-    retractall(grito),
     retractall(entrada_em(_,_)).
 
 direita(norte,leste).
