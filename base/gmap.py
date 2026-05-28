@@ -1,4 +1,27 @@
-################################################
+"""Interface, simulador e planejador de caminhos do agente Pitfall.
+
+Este arquivo e o ponto de entrada em Python do Trabalho 2 de INF1771. Ele faz a
+ponte entre tres responsabilidades:
+
+1. Carregar ou gerar o labirinto 12x12 pedido no enunciado.
+2. Conversar com o SWI-Prolog, que guarda o conhecimento do agente e escolhe as
+   metas de alto nivel: pegar ouro, buscar powerup, explorar, voltar para a
+   saida ou sair.
+3. Exibir o jogo com Pygame e transformar as metas escolhidas em movimentos
+   concretos usando A*.
+
+No enunciado, o agente nao pode enxergar o mapa completo. Por isso, o modo
+normal da interface mostra apenas a memoria/conhecimento acumulado pelo agente:
+brisa perto de pocos, flash perto de teletransportes, passos perto de inimigos,
+brilho onde existe ouro e reflexo onde existe powerup. O parametro
+``--show-map`` existe apenas para depuracao e apresentacao, pois revela o mapa
+real.
+
+O Prolog fica em ``main.pl`` e representa a parte logica do trabalho. Este
+arquivo fica com a parte operacional: janela, teclado, modo terminal, leitura de
+mapas, geracao aleatoria, consulta das decisoes e execucao dos comandos.
+"""
+
 import argparse
 import heapq
 import pathlib
@@ -16,6 +39,17 @@ ASSETS_DIR = PROJECT_DIR / "assets"
 
 
 def parse_args():
+    """Le os parametros de execucao aceitos pelo programa.
+
+    Os parametros foram pensados para facilitar tanto a apresentacao visual
+    quanto os testes:
+
+    - ``--map`` carrega um arquivo ``.pl`` com fatos ``tile/3``.
+    - ``--random-map`` gera um mapa novo com as quantidades do enunciado.
+    - ``--manual`` desliga o agente automatico e permite jogar pelo teclado.
+    - ``--show-map`` revela o mapa real, util para depurar.
+    - ``--headless`` executa sem janela grafica, ideal para testes repetiveis.
+    """
     parser = argparse.ArgumentParser(
         description="INF1771 Trabalho 2 - Agente logico Pitfall"
     )
@@ -102,6 +136,12 @@ last_agent_cell = (1, 1)
 
 
 def resolve_map_path(raw_path):
+    """Encontra o arquivo de mapa informado pelo usuario.
+
+    O programa aceita caminhos relativos ao diretorio atual, ao diretorio
+    ``base`` e a raiz do projeto. Quando nenhum mapa e informado, usa o mapa
+    padrao em ``maps/mapa.pl``.
+    """
     if raw_path is not None:
         candidates = [
             raw_path,
@@ -123,12 +163,25 @@ def resolve_map_path(raw_path):
 
 
 def load_map_from_file():
+    """Carrega no Prolog um mapa escrito manualmente em arquivo ``.pl``.
+
+    Esta funcao atende ao requisito do enunciado de permitir uma matriz de
+    labirinto definida manualmente. O arquivo deve declarar fatos ``tile(X,Y,Z)``,
+    onde ``Z`` e o conteudo da casa: poco, inimigo, ouro, powerup ou vazio.
+    """
     map_path = resolve_map_path(args.map)
     prolog.consult(str(map_path))
     print(f"[mapa] carregado: {map_path}")
 
 
 def load_random_map():
+    """Gera um mapa aleatorio com as quantidades definidas no enunciado.
+
+    O labirinto possui 8 pocos, 4 teletransportes, 2 inimigos grandes, 2 inimigos
+    pequenos, 3 ouros e 3 powerups. A casa inicial ``(1, 1)`` nunca recebe
+    elemento perigoso, e uma das duas primeiras casas possiveis tambem e deixada
+    livre para evitar um inicio imediatamente bloqueado.
+    """
     rng = random.Random(args.seed)
     elements = ["P"] * 8 + ["T"] * 4 + ["D"] * 2 + ["d"] * 2 + ["O"] * 3 + ["U"] * 3
     positions = [(x, y) for x in range(1, 13) for y in range(1, 13) if (x, y) != (1, 1)]
@@ -159,19 +212,33 @@ list(prolog.query("reset_game"))
 
 
 def atom(value):
+    """Converte um valor retornado pelo Prolog para string Python."""
     return str(value)
 
 
 def alive():
+    """Indica se o agente ainda pode agir.
+
+    No codigo, a orientacao do jogador tambem guarda estados finais especiais:
+    ``morto`` quando caiu em um poco ou perdeu toda a energia, e ``saiu`` quando
+    voltou para ``(1, 1)`` depois de coletar os ouros.
+    """
     return player_pos[2] not in ("morto", "saiu")
 
 
 def in_bounds(pos):
+    """Verifica se uma posicao pertence ao tabuleiro 12x12."""
     x, y = pos
     return 1 <= x <= size_x and 1 <= y <= size_y
 
 
 def neighbors(pos):
+    """Retorna os vizinhos ortogonais validos de uma casa.
+
+    O enunciado considera percepcoes apenas nas casas adjacentes sem diagonal.
+    O planejamento usa a mesma ideia: o agente so pode andar para norte, sul,
+    leste ou oeste.
+    """
     x, y = pos
     out = []
     for dx, dy in ((0, 1), (1, 0), (0, -1), (-1, 0)):
@@ -182,10 +249,16 @@ def neighbors(pos):
 
 
 def manhattan(a, b):
+    """Calcula a distancia Manhattan usada como heuristica do A*."""
     return abs(a[0] - b[0]) + abs(a[1] - b[1])
 
 
 def query_cells(predicate):
+    """Consulta no Prolog todas as casas aceitas por um predicado ``X,Y``.
+
+    Exemplo: ``query_cells("seguro")`` retorna as casas que a base de
+    conhecimento considera seguras para caminhar.
+    """
     cells = set()
     for sol in prolog.query(f"{predicate}(X,Y)"):
         cells.add((int(sol["X"]), int(sol["Y"])))
@@ -193,6 +266,12 @@ def query_cells(predicate):
 
 
 def get_candidates():
+    """Busca no Prolog as metas candidatas para a proxima decisao.
+
+    O Prolog atribui um custo/prioridade para cada meta. O Python ordena essas
+    metas e tenta executar a melhor: pegar item, sair ou planejar caminho ate uma
+    casa alvo.
+    """
     candidates = []
     for sol in prolog.query("meta_candidata(T,X,Y,C)"):
         candidates.append(
@@ -208,6 +287,7 @@ def get_candidates():
 
 
 def reconstruct_path(node):
+    """Reconstrui o caminho final do A* seguindo os pais dos nos."""
     path = []
     while node is not None:
         path.append(node.get_coord())
@@ -217,6 +297,13 @@ def reconstruct_path(node):
 
 
 def astar(start, goal, walkable):
+    """Encontra um caminho entre duas casas usando A*.
+
+    ``walkable`` e uma funcao recebida como parametro porque a nocao de "casa
+    caminhavel" depende do conhecimento atual do agente. Em geral, o caminho
+    evita pocos confirmados, celulas bloqueadas por impacto e casas ainda nao
+    consideradas seguras pelo Prolog.
+    """
     if start == goal:
         return [start]
 
@@ -254,6 +341,7 @@ def astar(start, goal, walkable):
 
 
 def direction_between(a, b):
+    """Descobre para qual direcao o agente precisa olhar para ir de ``a`` a ``b``."""
     dx = b[0] - a[0]
     dy = b[1] - a[1]
     if dx == 1:
@@ -268,6 +356,7 @@ def direction_between(a, b):
 
 
 def align_actions(current, target):
+    """Gera as rotacoes necessarias para mudar da direcao atual para a desejada."""
     if current == target:
         return []
     order = ["norte", "leste", "sul", "oeste"]
@@ -280,6 +369,12 @@ def align_actions(current, target):
 
 
 def path_to_actions(path, initial_direction):
+    """Transforma um caminho de coordenadas em comandos do jogo.
+
+    O A* retorna casas. O Prolog, porem, executa acoes no estilo do enunciado:
+    virar para esquerda, virar para direita e andar. Esta funcao converte uma
+    lista como ``[(1,1), (1,2), (2,2)]`` em uma fila de comandos executaveis.
+    """
     actions = []
     direction = initial_direction
     for a, b in zip(path, path[1:]):
@@ -291,6 +386,13 @@ def path_to_actions(path, initial_direction):
 
 
 def plan_to(goal):
+    """Planeja uma sequencia de acoes para chegar ate uma meta.
+
+    A meta pode ser uma casa segura ainda nao visitada, um ouro conhecido, um
+    powerup ou a saida. O Python consulta o Prolog para saber quais casas sao
+    seguras e quais pocos ja foram confirmados; depois usa A* para montar o
+    caminho.
+    """
     current = (player_pos[0], player_pos[1])
     if current == goal:
         return []
@@ -315,6 +417,11 @@ def plan_to(goal):
 
 
 def fallback_action():
+    """Pede uma acao simples ao Prolog quando nao ha caminho planejado.
+
+    Esse fallback mantem compatibilidade com a estrutura original do trabalho,
+    onde o Prolog podia responder diretamente uma acao por ``executa_acao/1``.
+    """
     acoes = list(prolog.query("executa_acao(X)"))
     if acoes:
         return atom(acoes[0]["X"])
@@ -322,6 +429,15 @@ def fallback_action():
 
 
 def decisao():
+    """Escolhe a proxima acao do agente automatico.
+
+    A decisao combina Prolog e Python:
+
+    - O Prolog calcula metas candidatas com base na memoria e nos sensores.
+    - O Python tenta transformar a melhor meta em caminho com A*.
+    - Se ja existe uma fila de acoes planejadas, executa a proxima.
+    - Se um alvo ficou inalcançavel, tenta outro alvo antes do fallback.
+    """
     global last_agent_cell
 
     if not alive():
@@ -353,6 +469,7 @@ def decisao():
 
 
 def forward_position():
+    """Calcula a casa imediatamente a frente do agente."""
     x, y, direction = player_pos
     deltas = {
         "norte": (0, 1),
@@ -365,6 +482,12 @@ def forward_position():
 
 
 def exec_prolog(a):
+    """Executa no Prolog uma acao escolhida pelo agente ou pelo teclado.
+
+    Antes de andar, guarda qual seria a casa esperada. Depois, em
+    ``update_prolog``, se a posicao nao mudou, o Python entende que houve impacto
+    contra parede e marca aquela casa como bloqueada para o A*.
+    """
     global last_action, expected_walk_target
     if a != "":
         expected_walk_target = forward_position() if a == "andar" else None
@@ -373,6 +496,17 @@ def exec_prolog(a):
 
 
 def update_prolog():
+    """Sincroniza o estado Python com a base de conhecimento Prolog.
+
+    Depois de cada acao, o Prolog atualiza observacoes, memoria, energia,
+    pontuacao, posicao e condicoes de fim. Esta funcao copia esses dados para
+    variaveis Python usadas pela interface grafica e pelo planejador A*.
+
+    Quando ``show_map`` esta desligado, a matriz exibida vem da memoria do
+    agente, respeitando o requisito de nao revelar o mapa real. Quando
+    ``show_map`` esta ligado, a matriz vem diretamente dos fatos ``tile/3`` para
+    facilitar debug e demonstracao.
+    """
     global player_pos, mapa, energia, pontuacao, visitados, show_map
     global ouros_coletados, expected_walk_target
 
@@ -471,10 +605,12 @@ def update_prolog():
 
 
 def load_image(name):
+    """Carrega uma imagem da pasta ``assets``."""
     return pygame.image.load(str(ASSETS_DIR / name))
 
 
 def load():
+    """Carrega fontes, relogio e imagens usadas pela interface Pygame."""
     global sys_font, clock, img_wall, img_grass, img_start, img_finish, img_path
     global img_gold, img_health, img_pit, img_bat, img_enemy1, img_enemy2, img_floor
     global bw_img_gold, bw_img_health, bw_img_pit, bw_img_bat, bw_img_enemy1, bw_img_enemy2, bw_img_floor
@@ -569,6 +705,7 @@ def load():
 
 
 def update(dt, screen):
+    """Avanca o agente automatico conforme o intervalo configurado."""
     global elapsed_time
 
     elapsed_time += dt
@@ -582,6 +719,16 @@ def update(dt, screen):
 
 
 def key_pressed(event):
+    """Trata os comandos de teclado da interface grafica.
+
+    Teclas principais:
+
+    - ``A`` alterna autoplay.
+    - Setas viram ou andam no modo manual.
+    - ``Espaco`` pega ouro ou powerup.
+    - ``S`` tenta sair pela casa inicial.
+    - ``M`` alterna entre memoria do agente e mapa real.
+    """
     global show_map, auto_play
     if event.type == pygame.KEYDOWN:
         if event.key == pygame.K_a:
@@ -614,6 +761,12 @@ def key_pressed(event):
 
 
 def draw_screen(screen):
+    """Desenha o mapa, o agente e os indicadores de pontuacao.
+
+    A tela usa imagens coloridas para casas confirmadas/visitadas e versoes em
+    preto-e-branco para informacoes ainda incertas. Assim fica visivel a
+    diferenca entre "o agente sabe" e "o agente apenas suspeita".
+    """
     screen.fill((0, 0, 0))
 
     y = 0
@@ -762,6 +915,7 @@ def draw_screen(screen):
 
 
 def main_loop(screen):
+    """Executa o loop principal da janela Pygame."""
     global clock
     running = True
 
@@ -780,6 +934,12 @@ def main_loop(screen):
 
 
 def run_headless(max_steps):
+    """Executa o agente pelo terminal, sem abrir interface grafica.
+
+    Este modo e util para testar se a logica termina corretamente: o agente
+    decide, executa, atualiza a base Prolog e para quando sair, morrer ou atingir
+    o limite de passos.
+    """
     update_prolog()
 
     step = 0
