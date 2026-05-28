@@ -1,102 +1,276 @@
-# INF1771 - Agente Logico Pitfall
+# INF1771 - Trabalho 2: Agente Logico Pitfall
 
-Projeto do Trabalho 2 de INF1771, baseado em Pitfall e no Mundo do Wumpus. O agente usa SWI-Prolog para representar conhecimento, memoria e decisoes, enquanto o Python executa a interface grafica, consulta a base Prolog e transforma metas em movimentos.
+Implementacao de um agente logico para o jogo Pitfall, desenvolvida para a
+disciplina INF1771. O projeto e inspirado no Mundo de Wumpus: o agente precisa
+explorar um labirinto desconhecido, interpretar percepcoes do ambiente, evitar
+perigos, coletar os ouros e retornar vivo para a saida.
+
+No codigo atual, a parte logica fica em SWI-Prolog e a execucao visual fica em
+Python com Pygame. O agente nao usa o mapa real para decidir; ele construiu uma
+memoria propria a partir dos sensores, como pede o enunciado.
+
+## Apresentacao
+
+### Video
+
+- Link do video: `https://drive.google.com/file/d/1nZIxE9kbBYjdpDB6WbXqk5eOo5Yfbm0C/view?usp=drive_link`
+
+### Integrantes
+
+| Nome | Matricula |
+| --- | --- |
+| Breno de Andrade Soares | 2320363 |
+| Dante Honorato Navaza | 2321406 |
+| Rafael Soares Estevao | 2320470 |
+
+## Objetivo do agente
+
+O agente controla o personagem dentro de um mapa `12x12`. Ele inicia na posicao
+`[1,1]`, que tambem e a saida do labirinto. Para vencer, precisa:
+
+1. explorar o ambiente;
+2. coletar os `3` ouros;
+3. evitar pocos, inimigos e teletransportes sempre que possivel;
+4. voltar para `[1,1]`;
+5. executar a acao `sair`.
+
+Durante a partida, o agente recebe percepcoes locais e inferencias sobre casas
+vizinhas. Ele nao conhece previamente a posicao real dos perigos.
+
+## O que esta implementado
+
+- Mapa `12x12`.
+- Posicao inicial e saida em `[1,1]`.
+- Energia inicial de `100`.
+- Tres ouros obrigatorios para finalizar a partida.
+- Tres powerups de energia em mapas aleatorios.
+- Oito pocos/obstaculos em mapas aleatorios.
+- Quatro teletransportes em mapas aleatorios.
+- Dois inimigos pequenos, com `20` de dano.
+- Dois inimigos grandes, com `50` de dano.
+- Pontuacao com custo de acao, recompensa por ouro e penalidades por dano/morte.
+- Base de conhecimento em Prolog.
+- Memoria de percepcoes e certezas do agente.
+- Tomada de decisao em Prolog por metas candidatas.
+- Planejamento de caminho com A* em Python.
+- Interface grafica com Pygame.
+- Modo automatico, modo manual e modo terminal sem interface.
+- Leitura de mapas `.pl` e geracao de mapas aleatorios.
+
+## Arquitetura
+
+O projeto esta dividido em tres partes principais:
+
+| Arquivo | Responsabilidade |
+| --- | --- |
+| `base/gmap.py` | Ponto de entrada do programa. Carrega mapas, inicia Pygame, consulta o Prolog, executa o agente automatico, trata teclado, roda modo terminal e usa A*. |
+| `base/main.pl` | Base logica do agente. Guarda estado, memoria, percepcoes, regras do jogo, inferencias e metas de decisao. |
+| `base/TreeNode.py` | Estrutura auxiliar usada pelo A* para reconstruir caminhos. |
+
+Pastas auxiliares:
+
+- `maps/`: mapas de teste em Prolog.
+- `assets/`: imagens usadas na interface grafica.
+- `requirements.txt`: dependencias Python (`pygame` e `pyswip`).
 
 ## Requisitos
 
-- Python 3.10 ou superior
-- Dependencias Python listadas em `requirements.txt`
+- Python `3.10+`.
+- SWI-Prolog instalado.
+- Dependencias Python do arquivo `requirements.txt`.
 
-Instale as dependencias Python:
+No PowerShell, a configuracao recomendada e:
 
-```bash
-python3 -m pip install -r requirements.txt
+```powershell
+py -3 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
 ```
 
-## Como Executar
+Verifique se o SWI-Prolog esta disponivel:
 
-Executar com o mapa padrao:
-
-```bash
-python3 base/gmap.py
+```powershell
+swipl --version
 ```
 
-Executar com um mapa especifico:
+Se o comando acima nao funcionar, instale o SWI-Prolog e confirme que ele esta
+no `PATH` do Windows.
 
-```bash
-python3 base/gmap.py --map maps/mapa-facil.pl
-python3 base/gmap.py --map maps/mapa-medio.pl
-python3 base/gmap.py --map maps/mapa-dificil.pl
+## Como executar no PowerShell
+
+### Interface grafica com o mapa padrao
+
+```powershell
+python .\base\gmap.py
 ```
 
-Executar sem abrir a janela grafica:
+### Interface grafica com mapa especifico
 
-```bash
-python3 base/gmap.py --headless --map maps/mapa-facil.pl --max-steps 1000
+```powershell
+python .\base\gmap.py --map .\maps\mapa-facil.pl
+python .\base\gmap.py --map .\maps\mapa-medio.pl
+python .\base\gmap.py --map .\maps\mapa-dificil.pl
 ```
 
-Gerar um mapa aleatorio:
+### Modo manual
 
-```bash
-python3 base/gmap.py --random-map --seed 42
+```powershell
+python .\base\gmap.py --manual --map .\maps\mapa-facil.pl
 ```
 
-Ver todos os argumentos disponiveis:
+### Mostrar o mapa real desde o inicio
 
-```bash
-python3 base/gmap.py --help
+```powershell
+python .\base\gmap.py --show-map --map .\maps\mapa-facil.pl
 ```
 
-## Controles
+Esse modo revela os elementos reais do mapa. Ele e util para debug e
+apresentacao, mas nao representa a informacao disponivel para o agente.
 
-- `Seta para cima`: andar
-- `Seta esquerda`: virar para a esquerda
-- `Seta direita`: virar para a direita
-- `Espaco`: pegar ouro ou powerup
-- `S`: sair do labirinto
-- `M`: alternar exibicao do mapa conhecido/real
-- `A`: ligar ou desligar autoplay
+### Modo terminal sem interface
 
-Use `--manual` para iniciar com controle manual.
+```powershell
+python .\base\gmap.py --headless --map .\maps\mapa-facil.pl --max-steps 1000
+```
 
-## Regras do Jogo
+### Modo terminal com rastreamento das acoes
 
-- O mapa tem tamanho `12x12`.
-- A posicao inicial e a saida ficam em `[1,1]`.
-- O agente comeca com `100` pontos de energia.
-- Cada acao executada custa `-1` ponto.
-- Pegar ouro concede `+1000` pontos.
-- Powerup recupera `20` pontos de energia, limitado ao maximo de `100`.
-- Cair em um poco/obstaculo mata o agente e aplica `-1000` pontos.
-- Inimigo pequeno causa `20` de dano.
-- Inimigo grande causa `50` de dano.
-- Morte por inimigo aplica penalidade adicional de `-1000`.
-- Morcego teletransporta o agente para uma posicao aleatoria.
+```powershell
+python .\base\gmap.py --headless --trace --map .\maps\mapa-facil.pl --max-steps 1000
+```
 
-## Sensores
+### Gerar mapa aleatorio
 
-- Brisa: existe poco/obstaculo em uma casa adjacente.
-- Passos: existe inimigo em uma casa adjacente.
-- Flash: existe morcego/teletransporte em uma casa adjacente.
-- Brilho: existe ouro na sala atual.
-- Reflexo: existe powerup na sala atual.
-- Impacto: o agente tentou andar contra a parede.
+```powershell
+python .\base\gmap.py --random-map --seed 42
+```
+
+### Ver a ajuda do programa
+
+```powershell
+python .\base\gmap.py --help
+```
+
+## Argumentos disponiveis
+
+| Argumento | Funcao |
+| --- | --- |
+| `--map` | Carrega um arquivo `.pl` com fatos `tile/3`. |
+| `--random-map` | Gera um mapa aleatorio com as quantidades do enunciado. |
+| `--seed` | Fixa a aleatoriedade para repetir testes. |
+| `--manual` | Inicia com o autoplay desligado. |
+| `--delay` | Define o intervalo entre acoes automaticas. |
+| `--show-map` | Mostra o mapa real em vez da memoria do agente. |
+| `--headless` | Executa somente no terminal. |
+| `--max-steps` | Define o limite de acoes no modo terminal. |
+| `--trace` | Mostra o estado antes e depois de cada acao no terminal. |
+
+## Controles da interface
+
+| Tecla | Acao |
+| --- | --- |
+| `A` | Liga ou desliga o autoplay. |
+| `Seta para cima` | Anda uma casa para frente no modo manual. |
+| `Seta esquerda` | Vira para a esquerda no modo manual. |
+| `Seta direita` | Vira para a direita no modo manual. |
+| `Espaco` | Pega ouro ou powerup na casa atual. |
+| `S` | Tenta sair do labirinto. |
+| `M` | Alterna entre mapa conhecido e mapa real. |
+
+## Sensores do agente
+
+O agente interpreta as seguintes percepcoes:
+
+| Percepcao | Significado |
+| --- | --- |
+| `brisa` | Ha um poco/obstaculo em alguma casa adjacente. |
+| `passos` | Ha um inimigo pequeno ou grande em alguma casa adjacente. |
+| `flash` | Ha um teletransporte em alguma casa adjacente. |
+| `brilho` | Ha ouro na casa atual. |
+| `reflexo` | Ha powerup na casa atual. |
+| `impacto` | O agente tentou andar contra uma parede. |
+
+As percepcoes alimentam `memory/3` no Prolog. A partir dessa memoria, o agente
+marca casas como visitadas, suspeitas, seguras ou confirmadas.
+
+## Pontuacao e eventos
+
+| Evento | Efeito |
+| --- | --- |
+| Qualquer acao | `-1` ponto. |
+| Pegar ouro | `+1000` pontos. |
+| Pegar powerup | Recupera ate `20` de energia. |
+| Cair em poco | Morte imediata e penalidade de `-1000`. |
+| Inimigo pequeno | `20` de dano e perda equivalente na pontuacao. |
+| Inimigo grande | `50` de dano e perda equivalente na pontuacao. |
+| Morrer por dano | Penalidade adicional de `-1000`. |
+| Teletransporte | Move o agente para uma casa aleatoria. |
+| Sair com 3 ouros | Encerra a partida com sucesso. |
 
 ## Mapas
 
-Os mapas ficam na pasta `maps/`:
+Os mapas disponiveis no repositorio sao:
 
 - `maps/mapa.pl`
 - `maps/mapa-facil.pl`
 - `maps/mapa-medio.pl`
 - `maps/mapa-dificil.pl`
 
-Cada mapa define `map_size/2` e fatos `tile(X,Y,Conteudo)`.
+Cada mapa e um arquivo Prolog com fatos no formato:
 
-## Estrutura
+```prolog
+tile(X, Y, Conteudo).
+```
 
-- `base/gmap.py`: interface Pygame, argumentos, autoplay, modo headless e planejamento A\*
-- `base/main.pl`: base de conhecimento, memoria, regras do jogo e decisao logica
-- `base/TreeNode.py`: no usado na busca A\*
-- `maps/`: mapas em Prolog
-- `assets/`: imagens usadas pela interface grafica
+Simbolos aceitos:
+
+| Simbolo | Conteudo |
+| --- | --- |
+| `'P'` | Poco/obstaculo. |
+| `'T'` | Teletransporte. |
+| `'D'` | Inimigo grande. |
+| `'d'` | Inimigo pequeno. |
+| `'O'` | Ouro. |
+| `'U'` | Powerup. |
+| `''` | Casa vazia. |
+
+## Resultados atuais
+
+Resultados obtidos com o codigo atual usando `--headless` e `--max-steps 1000`.
+Todos os mapas abaixo foram concluidos com sucesso, retornando para `[1,1]`
+apos coletar os `3` ouros.
+
+| Mapa | Status | Passos | Energia final | Pontuacao | Ouros | Posicao final |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| `maps/mapa-facil.pl` | `saiu` | `365` | `100` | `2636` | `3` | `(1,1)` |
+| `maps/mapa-medio.pl` | `saiu` | `431` | `100` | `2530` | `3` | `(1,1)` |
+| `maps/mapa-dificil.pl` | `saiu` | `437` | `100` | `2564` | `3` | `(1,1)` |
+
+## Testes rapidos no PowerShell
+
+Para validar os mapas fixos sem abrir a interface:
+
+```powershell
+python .\base\gmap.py --headless --map .\maps\mapa.pl --max-steps 1000
+python .\base\gmap.py --headless --map .\maps\mapa-facil.pl --max-steps 1000
+python .\base\gmap.py --headless --map .\maps\mapa-medio.pl --max-steps 1000
+python .\base\gmap.py --headless --map .\maps\mapa-dificil.pl --max-steps 1000
+```
+
+Para testar varios mapas aleatorios:
+
+```powershell
+foreach ($seed in 1..10) {
+    python .\base\gmap.py --headless --random-map --seed $seed --max-steps 1000
+}
+```
+
+Um teste bem-sucedido termina com uma linha parecida com:
+
+```text
+resultado status=saiu passos=365 energia=100 pontuacao=2636 ouros=3 pos=(1,1)
+```
+
+O valor exato de passos e pontuacao pode variar conforme o mapa, mas
+`status=saiu` e `ouros=3` indicam que o agente completou o objetivo.
