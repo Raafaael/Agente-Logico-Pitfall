@@ -1,5 +1,40 @@
+/*
+    Base logica do agente Pitfall.
+
+    Este arquivo implementa a parte que o enunciado pede para ficar em
+    SWI-Prolog: representacao de conhecimento, atualizacao da memoria do agente
+    e tomada de decisao. O Python, em gmap.py, cuida da interface, do loop do
+    jogo e do A*. Aqui ficam as regras que dizem o que o agente sabe, o que ele
+    percebe e qual meta deve perseguir.
+
+    O mundo segue o modelo do "Mundo de Wumpus" adaptado para Pitfall:
+
+    - O mapa e uma grade 12x12.
+    - O agente comeca em (1,1), que tambem e a saida.
+    - O agente nao conhece o mapa real; ele constroi memoria a partir de
+      sensores.
+    - Brisa indica poco em casa adjacente.
+    - Flash indica inimigo de teletransporte em casa adjacente.
+    - Passos indicam inimigo comum em casa adjacente.
+    - Brilho indica ouro na propria casa.
+    - Reflexo indica powerup de energia na propria casa.
+    - O jogo termina quando o agente sai com os ouros ou morre.
+
+    Simbolos usados nos fatos tile(X,Y,Conteudo):
+
+    - 'P': poco/obstaculo, morte instantanea.
+    - 'T': teletransporte, envia o agente para uma casa aleatoria.
+    - 'D': inimigo grande, causa 50 de dano.
+    - 'd': inimigo pequeno, causa 20 de dano.
+    - 'O': ouro, vale recompensa de pontuacao.
+    - 'U': powerup, recupera energia.
+    - '': casa vazia.
+*/
+
 :- use_module(library(lists)).
 
+% Predicados dinamicos sao fatos que mudam durante a execucao do jogo.
+% Eles representam tanto o estado real do jogo quanto a memoria do agente.
 :- dynamic posicao/3.
 :- dynamic memory/3.
 :- dynamic visitado/2.
@@ -19,27 +54,39 @@
 %% Utilitarios gerais
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+% Quantidade de ouro exigida para que o agente possa voltar a (1,1) e sair.
 total_ouros(3).
+
+% Energia inicial definida no enunciado.
 energia_inicial(100).
 
+% Tamanho padrao do labirinto. Um mapa carregado pode sobrescrever isso com
+% map_size/2, mas o trabalho usa 12x12.
 map_size_default(12,12).
 
+% tamanho_mapa/2 centraliza a leitura do tamanho. Primeiro tenta usar o tamanho
+% declarado pelo mapa; se nao existir, usa o padrao do trabalho.
 tamanho_mapa(SX,SY) :- map_size(SX,SY), !.
 tamanho_mapa(SX,SY) :- map_size_default(SX,SY).
 
+% dentro_mapa/2 valida coordenadas. As paredes do labirinto sao justamente as
+% tentativas de andar para fora desses limites.
 dentro_mapa(X,Y) :-
     tamanho_mapa(SX,SY),
     between(1,SX,X),
     between(1,SY,Y).
 
+% assert_unico/1 evita fatos repetidos na base dinamica.
 assert_unico(Fato) :- call(Fato), !.
 assert_unico(Fato) :- assertz(Fato).
 
+% O agente esta vivo enquanto sua "direcao" nao foi trocada por um estado final.
 vivo :-
     posicao(_,_,D),
     D \= morto,
     D \= saiu.
 
+% Eventos como impacto, grito e entrada em uma sala duram apenas uma acao.
 limpa_eventos :-
     retractall(impacto),
     retractall(entrada_em(_,_)).
@@ -62,6 +109,7 @@ delta(oeste,-1,0).
 manhattan(X1,Y1,X2,Y2,D) :-
     D is abs(X1-X2) + abs(Y1-Y2).
 
+% Toda casa visitada vira conhecida com certeza, pois o agente esteve nela.
 marca_visitado(X,Y) :-
     assert_unico(visitado(X,Y)),
     assert_unico(certeza(X,Y)).
@@ -70,6 +118,14 @@ marca_visitado(X,Y) :-
 %% Estado do jogo
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+/*
+    reset_game/0 prepara uma partida nova.
+
+    Ele limpa memoria, observacoes, pontuacao, energia e posicao. Em seguida
+    coloca o agente em (1,1) olhando para norte, como especificado no enunciado.
+    A casa inicial e marcada como visitada e seu conteudo real e registrado na
+    memoria, pois o agente esta fisicamente nela.
+*/
 reset_game :-
     retractall(memory(_,_,_)),
     retractall(visitado(_,_)),
@@ -127,6 +183,15 @@ aplica_dano(Dano) :-
 %% Verificacao de eventos da sala atual
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+/*
+    verifica_player/0 aplica os efeitos da casa onde o agente esta.
+
+    A ordem das regras importa: poco mata imediatamente; inimigos causam dano
+    quando o agente entra na casa; teletransporte move o agente para outra casa
+    aleatoria e verifica novamente o resultado. Isso modela o requisito do
+    enunciado de que o teletransporte pode levar inclusive para outra casa
+    perigosa.
+*/
 verifica_player :- \+ vivo, !.
 
 verifica_player :-
@@ -175,6 +240,14 @@ teletransporta(X,Y,D) :-
 %% Comandos
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+/*
+    Comandos disponiveis ao agente.
+
+    Estes predicados sao chamados pelo Python quando o agente automatico ou o
+    jogador manual escolhe uma acao. Cada acao custa -1 ponto, como no enunciado.
+    A acao pegar tem efeitos diferentes para ouro e powerup; sair so funciona em
+    (1,1) depois de coletar todos os ouros.
+*/
 virar_direita :-
     vivo,
     limpa_eventos,
@@ -261,6 +334,27 @@ sair :-
 %% Observacao e memoria
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+/*
+    Esta secao constroi a base de conhecimento do agente.
+
+    O agente nunca consulta diretamente todos os tile/3 para decidir. Em vez
+    disso, ele atualiza memory/3 a partir de percepcoes. Casas adjacentes a
+    perigos geram pistas: brisa para poco, flash para teletransporte e passos
+    para inimigos. Ouro e powerup sao percebidos na propria casa como brilho e
+    reflexo.
+
+    A memoria de uma casa pode ser:
+
+    - []: nenhuma pista conhecida, logo tende a ser segura.
+    - [brisa]: pode haver poco.
+    - [flash]: pode haver teletransporte.
+    - [passos]: pode haver inimigo.
+    - [brilho]: existe ouro conhecido.
+    - [reflexo]: existe powerup conhecido.
+
+    certeza/2 indica que o agente ja sabe com seguranca algo sobre aquela casa.
+    certeza_tipo/3 guarda qual risco foi confirmado por inferencia.
+*/
 adjacente(X,Y) :-
     posicao(PX,Y,_),
     tamanho_mapa(SX,_),
@@ -455,6 +549,14 @@ confirma_obs(X,Y,Z) :-
 %% Predicados de conhecimento usados pelo A* em Python
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+/*
+    Esta secao exporta conhecimento em um formato facil para o Python consultar.
+
+    O A* precisa saber quais casas pode atravessar e quais devem ser evitadas.
+    Por isso existem predicados como seguro/2, poco_confirmado/2 e
+    fronteira_segura/2. Eles nao movem o agente; apenas resumem o conhecimento
+    logico construido acima.
+*/
 conteudo_memoria(X,Y,M) :- memory(X,Y,M), !.
 conteudo_memoria(_,_,[]).
 
@@ -519,6 +621,10 @@ fronteira_arriscada(X,Y) :-
     adjacente_pos(VX,VY,X,Y).
 
 risco_score(X,Y,10000) :- poco_confirmado(X,Y), !.
+
+% risco_score/3 transforma suspeitas em um custo numerico. Quanto maior o risco,
+% menos atraente a casa fica para a decisao. Pocos confirmados recebem custo
+% maximo porque devem ser evitados.
 risco_score(X,Y,Score) :-
     conteudo_memoria(X,Y,M),
     (member(brisa,M) -> suporte_obs(brisa,X,Y,SB), B is 900 * max(1,SB) ; B = 0),
@@ -576,6 +682,21 @@ powerup_conhecido(X,Y) :-
 %% Tomada de decisao em Prolog
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+/*
+    meta_candidata/4 e o coracao da decisao em Prolog.
+
+    Cada regra produz uma meta possivel no formato:
+
+        meta_candidata(Tipo, X, Y, Custo)
+
+    Quanto menor o custo, maior a prioridade. Assim o agente primeiro pega ouro
+    ou powerup quando esta sobre eles, sai quando ja pode, volta para a saida
+    depois de coletar os ouros, procura ouro conhecido, explora fronteiras
+    seguras e, se necessario, considera fronteiras arriscadas com penalidade.
+
+    O Python recebe essas metas, ordena pelo custo e usa A* para transformar a
+    meta escolhida em uma sequencia concreta de virar/andar.
+*/
 meta_candidata(pegar,0,0,-100000) :-
     posicao(X,Y,_),
     ouro_conhecido(X,Y), !.
@@ -682,6 +803,12 @@ executa_acao(virar_direita).
 %% Mostra mapa real
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+/*
+    show_map/0 imprime o mapa real no terminal.
+
+    Esta visualizacao revela tile/3 diretamente, portanto serve para depuracao e
+    apresentacao. Ela nao representa o que o agente "sabe" durante o jogo.
+*/
 show_player(X,Y) :- posicao(X,Y,norte), write('^'), !.
 show_player(X,Y) :- posicao(X,Y,oeste), write('<'), !.
 show_player(X,Y) :- posicao(X,Y,leste), write('>'), !.
@@ -725,6 +852,20 @@ show_map(_,0) :-
 %% Mostra mapa conhecido
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+/*
+    show_mem/0 imprime a memoria do agente.
+
+    Esta e a visualizacao alinhada ao requisito de desconhecimento do mapa: o
+    agente mostra apenas casas visitadas, certezas e suspeitas geradas por
+    sensores. Os marcadores ajudam a ler a base de conhecimento:
+
+    - '.': casa visitada.
+    - '?': casa suspeita, ainda sem certeza.
+    - '!': casa conhecida/confirmada.
+
+    As letras P, T, O, D e U indicam, respectivamente, brisa/poco, flash/
+    teletransporte, brilho/ouro, passos/inimigo e reflexo/powerup.
+*/
 show_mem_info(X,Y) :-
     memory(X,Y,Z),
     ((visitado(X,Y), write('.'), !) ; (\+ certeza(X,Y), write('?'), !) ; write('!')),
